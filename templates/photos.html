@@ -1,0 +1,292 @@
+﻿{% extends "base.html" %}
+
+{% block content %}
+<!-- BaguetteBox CSS for lightbox gallery - Latest version -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/baguettebox.js@1.11.1/dist/baguetteBox.min.css">
+
+<div class="container">
+    <h1>📷 STEM Club Photo Gallery</h1>
+    <p>Explore photos of our aquaponics system, STEM Club activities, and student projects!</p>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h3>🌱 STEM Club Photos</h3>
+        </div>
+        <div class="card-body">
+            <div class="gallery gallery-flow" id="photo-gallery">
+                
+                <!-- YouTube thumbnail -->
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a class="video-thumb" href="https://www.youtube.com/watch?v=ZbwaqNKmJ38" target="_blank" rel="noopener noreferrer" aria-label="Open YouTube video in new tab">
+                            <img src="https://img.youtube.com/vi/ZbwaqNKmJ38/hqdefault.jpg"
+                                 class="rounded shadow-sm gallery-image" alt="Nelson the Rescue Fish">
+                            <div class="video-overlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
+                                <span class="badge bg-primary" style="pointer-events:none;font-size:1.1rem;">▶ Play video</span>
+                            </div>
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">▶ Play video</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>Nelson the rescue fish. (YouTube)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/stem_club_visit_with_president.jpg"
+                            title="The STEM Club thanking President Dart (09/08/2025)">
+                            <img src="/aquaponics/static/img/stem_club_visit_with_president.jpg"
+                                class="rounded shadow-sm gallery-image" alt="STEM Club with President Dart">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>The STEM Club thanking President Dart. (09/08/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/visiting_with_president_dart.jpg"
+                            title="Visiting with President Dart (09/08/2025)">
+                            <img src="/aquaponics/static/img/visiting_with_president_dart.jpg"
+                                class="rounded shadow-sm gallery-image" alt="Visiting with President Dart">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>Visiting with President Dart. (09/08/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/system_with_new_fish_plants_09-14-25.jpg"
+                            title="System with new fish and plants (09/14/2025)">
+                            <img src="/aquaponics/static/img/system_with_new_fish_plants_09-14-25.jpg"
+                                class="rounded shadow-sm gallery-image" alt="System with New Fish and Plants">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>System with new fish and plants. (09/14/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/tank_with_new_fish_plants_09-14-25.jpg"
+                            title="Tank with new additions (09/14/2025)">
+                            <img src="/aquaponics/static/img/tank_with_new_fish_plants_09-14-25.jpg"
+                                class="rounded shadow-sm gallery-image" alt="Tank with New Fish and Plants">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>Tank with new fish and plants. (09/14/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/preparing_plants_09-14-25.jpg"
+                            title="Preparing plants (09/14/2025)">
+                            <img src="/aquaponics/static/img/preparing_plants_09-14-25.jpg"
+                                class="rounded shadow-sm gallery-image" alt="Preparing Plants">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>Preparing plants for the system. (09/14/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/putting_in_new_fish_1_09-14-25.jpg"
+                            title="Adding new fish (09/14/2025)">
+                            <img src="/aquaponics/static/img/putting_in_new_fish_1_09-14-25.jpg"
+                                class="rounded shadow-sm gallery-image" alt="Adding New Fish - Part 1">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>Adding new fish. (09/14/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/putting_in_new_fish_2_09-14-25.jpg"
+                            title="Adding new fish (09/14/2025)">
+                            <img src="/aquaponics/static/img/putting_in_new_fish_2_09-14-25.jpg"
+                                class="rounded shadow-sm gallery-image" alt="Adding New Fish - Part 2">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>Introducing new fish. (09/14/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/putting_in_new_fish_3_09-14-25.jpg"
+                            title="Adding new fish (09/14/2025)">
+                            <img src="/aquaponics/static/img/putting_in_new_fish_3_09-14-25.jpg"
+                                class="rounded shadow-sm gallery-image" alt="Adding New Fish - Part 3">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>Final steps adding fish. (09/14/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/sarah_fishing_09-14-25.jpg"
+                            title="Sarah netting fish (09/14/2025)">
+                            <img src="/aquaponics/static/img/sarah_fishing_09-14-25.jpg"
+                                class="rounded shadow-sm gallery-image" alt="Sarah Fishing">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>Sarah netting fish. (09/14/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/zak_fiishing_09-14-25.jpg"
+                            title="Zak netting fish (09/14/2025)">
+                            <img src="/aquaponics/static/img/zak_fiishing_09-14-25.jpg"
+                                class="rounded shadow-sm gallery-image" alt="Zak Fishing">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>Zak working with fish. (09/14/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/zak_with_student.jpg"
+                            title="Zak mentoring a student">
+                            <img src="/aquaponics/static/img/zak_with_student.jpg"
+                                class="rounded shadow-sm gallery-image" alt="Zak with Student">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>Zak mentoring a student.</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/pleco_hiding-08-29-25.jpg"
+                            title="Pleco hiding (08/29/2025)">
+                            <img src="/aquaponics/static/img/pleco_hiding-08-29-25.jpg"
+                                class="rounded shadow-sm gallery-image" alt="Pleco Hiding">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>Pleco hiding. (08/29/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/young_man_testing_water-07-25-25.jpg"
+                            title="Testing water quality (07/25/2025)">
+                            <img src="/aquaponics/static/img/young_man_testing_water-07-25-25.jpg"
+                                class="rounded shadow-sm gallery-image" alt="Testing Water Quality">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>Testing water quality. (07/25/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/system_being_workedon_06-01-25.jpg"
+                            title="System maintenance (06/01/2025)">
+                            <img src="/aquaponics/static/img/system_being_workedon_06-01-25.jpg"
+                                class="rounded shadow-sm gallery-image" alt="System Being Worked On">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>System maintenance. (06/01/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/system_05-23-25.jpg"
+                            title="System overview (05/23/2025)">
+                            <img src="/aquaponics/static/img/system_05-23-25.jpg"
+                                class="rounded shadow-sm gallery-image" alt="System Overview May 2025">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>System overview. (05/23/2025)</small></div>
+                </div>
+
+                <div class="gallery-item">
+                    <div class="position-relative">
+                        <a href="/aquaponics/static/img/system_in_bio_lab_05-01-25.jpg"
+                            title="System in Biology Lab (05/01/2025)">
+                            <img src="/aquaponics/static/img/system_in_bio_lab_05-01-25.jpg"
+                                class="rounded shadow-sm gallery-image" alt="System in Biology Lab">
+                        </a>
+                        <div class="gallery-indicator">
+                            <span class="badge bg-primary">🔍 Click to view</span>
+                        </div>
+                    </div>
+                    <div class="mt-2"><small>System in Biology lab. (05/01/2025)</small></div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="mt-2 text-white">Want to contribute your photos? Contact the STEM Club advisors!</div>
+    </div>
+</div>
+
+<!-- BaguetteBox JavaScript - Latest version from jsDelivr CDN -->
+<script src="https://cdn.jsdelivr.net/npm/baguettebox.js@1.11.1/dist/baguetteBox.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        baguetteBox.run('.gallery', {
+            animation: 'slideIn',
+            captions: function (element) {
+                return element.getAttribute('title') || element.querySelector('img').getAttribute('alt');
+            }
+        });
+    });
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.video-thumb').forEach(function(el) {
+        el.setAttribute('tabindex','0');
+        el.addEventListener('keydown', function(e) {
+            if (e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault();
+                window.open(el.href, el.target || '_self', 'noopener');
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
+

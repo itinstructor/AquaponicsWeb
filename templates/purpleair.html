@@ -1,0 +1,29 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PurpleAir</title>
+  <link rel="preconnect" href="https://www.purpleair.com">
+  <link rel="dns-prefetch" href="https://www.purpleair.com">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;margin:16px;background:#f7f7f7}
+    .card{background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px;max-width:900px;margin:0 auto}
+    .card h2{margin:6px 0 12px 0}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>PurpleAir Air Quality</h2>
+    <p>This widget loads lazily and won’t block the video streams. If PurpleAir is slow, a fallback link appears.</p>
+
+    <!-- Provide your embed URL via server or paste one directly -->
+    <div id="purpleair-widget"
+         data-url="{{ purpleair_url | default('https://map.purpleair.com/embedded?opt=1/mAQI/a10/cC0&select=YOUR_SENSOR_ID') }}">
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/purple_air.js') }}" defer></script>
+</body>
+</html>
+
