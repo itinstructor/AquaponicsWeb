@@ -113,5 +113,3 @@ The application now includes an automatic visitor tracking system that displays 
 - **Free Tier**: Uses ipinfo.io API (50,000 requests/month free tier)
 
 Access the visitor map at: `/aquaponics/visitors`
- 
-
