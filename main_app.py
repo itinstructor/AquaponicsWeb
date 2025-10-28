@@ -98,12 +98,8 @@ app.config['APPLICATION_ROOT'] = '/aquaponics'
 os.makedirs(app.instance_path, exist_ok=True)
 
 # Set both databases to be in the instance folder
-NASA_BLOG_DB_PATH = os.path.join(app.instance_path, "nasa_blog.db")
 VISITORS_DB_PATH = os.path.join(app.instance_path, "visitors.db")
 
-app.config["SQLALCHEMY_DATABASE_URI"] = (
-    f"sqlite:///{NASA_BLOG_DB_PATH}"  # main DB
-)
 app.config["SQLALCHEMY_BINDS"] = {"visitors": f"sqlite:///{VISITORS_DB_PATH}"}
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
@@ -129,18 +125,6 @@ db.init_app(app)
 
 # Register the geomap blueprint for visitor tracking
 app.register_blueprint(geomap_bp, url_prefix="/aquaponics")
-
-# Register Mars Blog blueprint - KEEP THIS BLOCK, remove the import at top
-logging.info("Attempting to import Mars Blog blueprint...")
-try:
-    from nasa import nasa_bp  # Import here, just before registration
-
-    logging.info(f"Mars Blog blueprint imported: {nasa_bp}")
-    app.register_blueprint(nasa_bp, url_prefix="/aquaponics/nasa")
-    logging.info("Mars Blog blueprint registered at /aquaponics/nasa")
-except Exception as e:
-    logging.exception("Failed to register Mars Blog blueprint")
-    logging.error(f"Error details: {str(e)}")
 
 # Create database tables if they don't exist
 # Initialize database tables for all modules
@@ -368,22 +352,12 @@ def photos():
     return render_template("photos.html")
 
 
-@app.route("/aquaponics/photos_nasa")
-def photos_nasa():
-    """NASA photo gallery page."""
-    return render_template("photos_nasa.html")
-
 
 @app.route("/aquaponics/stats")
 def stats_page():
     """HTML page that displays waitress/server streaming statistics."""
     return render_template("waitress_stats.html")
 
-
-@app.route("/aquaponics/nasa")
-def nasa():
-    """Render the NASA hub page."""
-    return redirect(url_for("nasa_bp.index"))
 
 
 # ---------------------------------------------------------------------------
