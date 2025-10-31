@@ -15,71 +15,27 @@ Does NOT include extra debug endpoints or complex UI logic.
 
 from flask import Flask, render_template, request, url_for, Response, redirect
 import os
-import logging
-import logging.handlers
 import threading
 import time
 from typing import Dict
 from datetime import datetime, timedelta, timezone
 
+# Initialize logging FIRST before any other imports
+from logging_config import setup_logging, get_logger
+setup_logging("main_app.log")
+logger = get_logger(__name__)
+
+logger.info("Application starting...")
+
 # Local modules that handle pulling frames from upstream cameras
 from cached_relay import CachedMediaRelay
 
 # Database and visitor tracking
-from database import db  # <-- db is already created in database.py
+from database import db
 from geomap_module import geomap_bp
 from geomap_module.models import VisitorLocation
 from geomap_module.helpers import get_ip, get_location
 from geomap_module.routes import VISITOR_COOLDOWN_HOURS
-
-# ---------------------------------------------------------------------------
-# LOGGING SETUP
-# ---------------------------------------------------------------------------
-# We log to files so we can review what happened later (errors, starts, etc.)
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
-LOG_FILE = os.path.join(LOG_DIR, "main_app.log")
-
-# Configure logging with TimedRotatingFileHandler
-handler = logging.handlers.TimedRotatingFileHandler(
-    LOG_FILE, when="midnight", interval=1, backupCount=14, encoding="utf-8"
-)
-handler.suffix = "%Y-%m-%d.log"  # Keep .log extension in rotated files
-
-try:
-    from zoneinfo import ZoneInfo
-
-    MOUNTAIN_TZ = ZoneInfo("America/Denver")
-except ImportError:
-    try:
-        from backports.zoneinfo import ZoneInfo
-
-        MOUNTAIN_TZ = ZoneInfo("America/Denver")
-    except ImportError:
-        from datetime import timezone, timedelta
-
-        MOUNTAIN_TZ = timezone(timedelta(hours=-6))
-        logging.warning("zoneinfo not available, using fixed UTC-6 offset")
-
-
-class MountainFormatter(logging.Formatter):
-    def formatTime(self, record, datefmt=None):
-        dt = datetime.fromtimestamp(record.created, MOUNTAIN_TZ)
-        if datefmt:
-            return dt.strftime(datefmt)
-        return dt.strftime("%Y-%m-%d %H:%M:%S %Z")
-
-
-handler.setFormatter(MountainFormatter("%(asctime)s %(levelname)s %(message)s"))
-
-# Get root logger and configure it
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
-# Remove any existing handlers to avoid duplicates
-root_logger.handlers.clear()
-root_logger.addHandler(handler)
-
-logging.info("Application start")
 
 # ---------------------------------------------------------------------------
 # FLASK APP SETUP
@@ -93,34 +49,31 @@ app.config['APPLICATION_ROOT'] = '/aquaponics'
 # ---------------------------------------------------------------------------
 # DATABASE SETUP
 # ---------------------------------------------------------------------------
-
-# Ensure the instance folder exists
 os.makedirs(app.instance_path, exist_ok=True)
 
-# Set both databases to be in the instance folder
 VISITORS_DB_PATH = os.path.join(app.instance_path, "visitors.db")
 
+# Set default database URI (required by Flask-SQLAlchemy even with binds)
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{VISITORS_DB_PATH}"
 app.config["SQLALCHEMY_BINDS"] = {"visitors": f"sqlite:///{VISITORS_DB_PATH}"}
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # Set secret key for sessions
-import os
-
 SECRET_KEY_FILE = os.path.join(os.path.dirname(__file__), "secret_key.txt")
 
 if os.path.exists(SECRET_KEY_FILE):
     with open(SECRET_KEY_FILE, "r") as f:
         app.config["SECRET_KEY"] = f.read().strip()
-    logging.info("Secret key loaded from file")
+    logger.info("Secret key loaded from file")
 else:
-    logging.error("secret_key.txt not found! Run generate_secret_key.py first")
+    logger.error("secret_key.txt not found! Run generate_secret_key.py first")
     raise RuntimeError(
         "Secret key file missing. Run generate_secret_key.py to create it."
     )
 
-logging.info(f"Secret key configured: {app.config['SECRET_KEY'][:10]}...")
+logger.info(f"Secret key configured: {app.config['SECRET_KEY'][:10]}...")
 
-# Initialize the database with this app (don't create a new SQLAlchemy instance)
+# Initialize the database with this app
 db.init_app(app)
 
 # Register the geomap blueprint for visitor tracking
@@ -131,9 +84,9 @@ app.register_blueprint(geomap_bp, url_prefix="/aquaponics")
 with app.app_context():
     try:
         db.create_all()
-        logging.info("Database tables created/verified")
+        logger.info("Database tables created/verified")
     except Exception as e:
-        logging.exception("Failed to create database tables")
+        logger.exception("Failed to create database tables")
 
 
 # ---------------------------------------------------------------------------
@@ -162,14 +115,14 @@ def track_visitor():
 
     # Store everything in UTC - no timezone conversion here
     now_utc = datetime.now(timezone.utc)
-    logging.info(
+    logger.info(
         f"[{now_utc.isoformat()}] Visitor tracking triggered for path: {request.path}"
     )
 
     try:
         # Get visitor's IP address
         ip = get_ip()
-        logging.info(f"Detected IP: {ip}")
+        logger.info(f"Detected IP: {ip}")
 
         # Check if we've already tracked this IP
         existing_visitor = VisitorLocation.query.filter_by(
@@ -184,7 +137,7 @@ def track_visitor():
 
             recent_cutoff = now_utc - timedelta(hours=VISITOR_COOLDOWN_HOURS)
             if last_visit and last_visit > recent_cutoff:
-                logging.info(f"Visitor {ip} tracked recently, skipping")
+                logger.info(f"Visitor {ip} tracked recently, skipping")
                 return
 
             # Update existing visitor
@@ -193,14 +146,14 @@ def track_visitor():
                 user_agent=request.headers.get("User-Agent", "")[:255],
             )
             db.session.commit()
-            logging.info(
+            logger.info(
                 f"Updated visitor from {ip} - Visit #{existing_visitor.visit_count}"
             )
         else:
             # New visitor - get location data
-            logging.info(f"New visitor {ip}, fetching location data...")
+            logger.info(f"New visitor {ip}, fetching location data...")
             location_data = get_location(ip)
-            logging.info(f"Location data received: {location_data}")
+            logger.info(f"Location data received: {location_data}")
 
             # Always create visitor record, even if geolocation fails
             visitor = VisitorLocation(
@@ -233,10 +186,10 @@ def track_visitor():
 
             db.session.add(visitor)
             db.session.commit()
-            logging.info(f"Successfully tracked new visitor from {ip}")
+            logger.info(f"Successfully tracked new visitor from {ip}")
 
     except Exception as e:
-        logging.error(f"Error tracking visitor: {e}", exc_info=True)
+        logger.error(f"Error tracking visitor: {e}", exc_info=True)
         db.session.rollback()
 
 
@@ -285,7 +238,7 @@ def get_media_relay(stream_url: str) -> CachedMediaRelay:
             )
             relay.start()
             _media_relays[stream_url] = relay
-            logging.info(f"[CachedRelayFactory] Created {stream_url}")
+            logger.info(f"[CachedRelayFactory] Created {stream_url}")
         return relay
 
 
@@ -588,35 +541,35 @@ def cleanup_relays():
         for relay in _media_relays.values():
             relay.stop()
         _media_relays.clear()
-    logging.info("Cached relays cleaned up")
+    logger.info("Cached relays cleaned up")
 
+
+# ---------------------------------------------------------------------------
+# GEOIP DATABASE INITIALIZATION
+# ---------------------------------------------------------------------------
+try:
+    import geoip2.database
+    GEOIP_DB_PATH = os.path.join(os.path.dirname(__file__), 'geoip', 'GeoLite2-City.mmdb')
+    
+    geo_reader = None
+    if os.path.exists(GEOIP_DB_PATH):
+        try:
+            geo_reader = geoip2.database.Reader(GEOIP_DB_PATH)
+            logger.info(f"GeoIP DB loaded: {GEOIP_DB_PATH}")
+        except Exception as e:
+            logger.exception(f"Failed to open GeoIP DB ({GEOIP_DB_PATH}): {e}")
+            geo_reader = None
+    else:
+        logger.warning(f"GeoIP DB not found at {GEOIP_DB_PATH}")
+except ImportError:
+    logger.warning("geoip2 package not installed, geolocation features disabled")
+    geo_reader = None
 
 # ---------------------------------------------------------------------------
 # MAIN ENTRY POINT
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import atexit
-
     atexit.register(cleanup_relays)
     print("Development mode ONLY (use waitress_app.py in production).")
-    # DO NOT use debug=True in production behind IIS
     app.run(host="127.0.0.1", port=5000, debug=False)
-
-import logging
-try:
-    import geoip2.database
-except Exception:
-    geoip2 = None
-
-GEOIP_DB_PATH = os.path.join(os.path.dirname(__file__), 'geoip', 'GeoLite2-City.mmdb')
-
-geo_reader = None
-if geoip2 is not None and os.path.exists(GEOIP_DB_PATH):
-    try:
-        geo_reader = geoip2.database.Reader(GEOIP_DB_PATH)
-        logging.info(f"GeoIP DB loaded: {GEOIP_DB_PATH}")
-    except Exception as e:
-        logging.exception(f"Failed to open GeoIP DB ({GEOIP_DB_PATH}): {e}")
-        geo_reader = None
-else:
-    logging.warning("GeoIP reader not initialized (missing package or DB).")
