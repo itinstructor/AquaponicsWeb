@@ -113,3 +113,11 @@ The application now includes an automatic visitor tracking system that displays 
 - **Free Tier**: Uses ipinfo.io API (50,000 requests/month free tier)
 
 Access the visitor map at: `/aquaponics/visitors`
+
+### License
+
+[![Creative Commons License](https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png)](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
+This work is licensed under a [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](http://creativecommons.org/licenses/by-nc-sa/4.0/).
+
+Copyright (c) 2025 William A Loring
