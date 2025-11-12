@@ -9,7 +9,7 @@ This version keeps:
  - Clean structure
  - Rotating log files (no noisy debug routes)
  - Simple relay caching for efficiency
- - Cloudflare Turnstile protection for all pages
+ - Cloudflare Turnstile protection (via turnstile.py module)
 
 Does NOT include extra debug endpoints or complex UI logic.
 """
@@ -20,7 +20,6 @@ import threading
 import time
 from typing import Dict
 from datetime import datetime, timedelta, timezone
-import requests
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -44,48 +43,8 @@ from geomap_module.models import VisitorLocation
 from geomap_module.helpers import get_ip, get_location
 from geomap_module.routes import VISITOR_COOLDOWN_HOURS
 
-# ---------------------------------------------------------------------------
-# TURNSTILE CONFIGURATION
-# ---------------------------------------------------------------------------
-TURNSTILE_SITE_KEY = (
-    os.environ.get("TURNSTILE_SITE_KEY")
-    or os.environ.get("TURNSTILE_SITEKEY")
-)
-TURNSTILE_SECRET = (
-    os.environ.get("TURNSTILE_SECRET")
-    or os.environ.get("TURNSTILE_SECRET_KEY")
-)
-
-# Session duration for Turnstile verification (24 hours)
-TURNSTILE_SESSION_DURATION = 24 * 60 * 60  # seconds
-
-def validate_turnstile(token: str, remoteip: str) -> dict:
-    """Validate Turnstile token with Cloudflare API."""
-    if not TURNSTILE_SECRET:
-        logger.error("TURNSTILE_SECRET not configured")
-        return {"success": False, "error-codes": ["missing-secret"]}
-    if not token:
-        logger.warning(f"Missing Turnstile token from {remoteip}")
-        return {"success": False, "error-codes": ["missing-token"]}
-    try:
-        r = requests.post(
-            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-            data={
-                "secret": TURNSTILE_SECRET,
-                "response": token,
-                "remoteip": remoteip
-            },
-            timeout=5,
-        )
-        result = r.json()
-        if result.get("success"):
-            logger.info(f"Turnstile verification successful for {remoteip}")
-        else:
-            logger.warning(f"Turnstile verification failed for {remoteip}: {result.get('error-codes')}")
-        return result
-    except Exception as e:
-        logger.exception(f"Turnstile verification exception for {remoteip}: {e}")
-        return {"success": False, "error-codes": [f"exception:{str(e)}"]}
+# Turnstile bot protection
+from turnstile import init_turnstile
 
 # ---------------------------------------------------------------------------
 # FLASK APP SETUP
@@ -111,8 +70,8 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 SECRET_KEY_FILE = os.path.join(os.path.dirname(__file__), "secret_key.txt")
 
 if os.path.exists(SECRET_KEY_FILE):
-    with open(SECRET_KEY_FILE, "r") as f:
-        app.config["SECRET_KEY"] = f.read().strip()
+    with open(SECRET_KEY_FILE, "r", encoding="utf-8") as f:
+        app.config["SECRET_KEY"] = f.read().strip().lstrip('\ufeff')  # Remove BOM
     logger.info("Secret key loaded from file")
 else:
     logger.error("secret_key.txt not found! Run generate_secret_key.py first")
@@ -127,7 +86,6 @@ db.init_app(app)
 app.register_blueprint(geomap_bp, url_prefix="/aquaponics")
 
 # Create database tables if they don't exist
-# Initialize database tables for all modules
 with app.app_context():
     try:
         db.create_all()
@@ -135,100 +93,10 @@ with app.app_context():
     except Exception as e:
         logger.exception("Failed to create database tables")
 
-
 # ---------------------------------------------------------------------------
-# TURNSTILE MIDDLEWARE - PROTECT ALL ROUTES
+# INITIALIZE TURNSTILE PROTECTION
 # ---------------------------------------------------------------------------
-@app.before_request
-def require_turnstile_verification():
-    """
-    Middleware to require Turnstile verification for all non-excluded routes.
-    Runs before every request to check if user has been verified.
-    """
-    # Paths that don't require Turnstile verification
-    EXCLUDED_PATHS = [
-        '/aquaponics/static/',
-        '/aquaponics/verify',
-        '/aquaponics/health',
-    ]
-    
-    # Check if path is excluded
-    for excluded in EXCLUDED_PATHS:
-        if request.path.startswith(excluded):
-            return None
-    
-    # Check if user has valid Turnstile session
-    turnstile_verified = session.get('turnstile_verified')
-    turnstile_timestamp = session.get('turnstile_timestamp')
-    
-    if turnstile_verified and turnstile_timestamp:
-        # Check if verification is still valid (not expired)
-        elapsed = time.time() - turnstile_timestamp
-        if elapsed < TURNSTILE_SESSION_DURATION:
-            # Valid session, allow request to proceed
-            return None
-        else:
-            # Session expired, clear it
-            session.pop('turnstile_verified', None)
-            session.pop('turnstile_timestamp', None)
-            logger.info(f"Turnstile session expired for {get_ip()}")
-    
-    # No valid verification - redirect to verification page
-    # Store the original URL they were trying to access
-    session['turnstile_redirect_url'] = request.url
-    return redirect(url_for('verify_turnstile'))
-
-# ---------------------------------------------------------------------------
-# TURNSTILE VERIFICATION ROUTE
-# ---------------------------------------------------------------------------
-@app.route("/aquaponics/verify", methods=["GET", "POST"])
-def verify_turnstile():
-    """
-    Standalone verification page that all users must pass through.
-    Automatically submits when Turnstile widget completes.
-    """
-    logger.info(f"Verify route accessed: method={request.method}, path={request.path}")
-    
-    if request.method == "POST":
-        token = request.form.get("cf-turnstile-response")
-        remoteip = (
-            request.headers.get("CF-Connecting-IP")
-            or request.headers.get("X-Forwarded-For")
-            or request.remote_addr
-        )
-        
-        logger.info(f"POST verify: token={'present' if token else 'MISSING'}, ip={remoteip}")
-        logger.debug(f"Form data keys: {list(request.form.keys())}")
-        
-        result = validate_turnstile(token, remoteip)
-        
-        if result.get("success"):
-            # Set session variables
-            session['turnstile_verified'] = True
-            session['turnstile_timestamp'] = time.time()
-            session.permanent = True  # Use permanent session
-            
-            # Redirect to original URL or home
-            redirect_url = session.pop('turnstile_redirect_url', url_for('index'))
-            logger.info(f"Turnstile verification successful, redirecting to {redirect_url}")
-            return redirect(redirect_url)
-        else:
-            # Verification failed
-            error_codes = result.get('error-codes', ['unknown-error'])
-            logger.warning(f"Turnstile verification failed: {error_codes}")
-            return render_template(
-                "turnstile_challenge.html",
-                sitekey=TURNSTILE_SITE_KEY,
-                error=error_codes,
-            )
-    
-    # GET request - show verification page
-    logger.info(f"GET verify: showing challenge page, sitekey={'present' if TURNSTILE_SITE_KEY else 'MISSING'}")
-    return render_template(
-        "turnstile_challenge.html",
-        sitekey=TURNSTILE_SITE_KEY,
-        error=None,
-    )
+init_turnstile(app)
 
 # ---------------------------------------------------------------------------
 # VISITOR TRACKING MIDDLEWARE
@@ -240,15 +108,15 @@ def track_visitor():
     Runs before every request to log visitor information.
     Increments visit counter for returning visitors.
     """
-    # Skip tracking for static files, API endpoints, and health checks
+    # Skip tracking for static files, API endpoints, health checks, and Turnstile
     if (
         request.path.startswith("/aquaponics/static/")
         or request.path.startswith("/aquaponics/api/")
+        or request.path.startswith("/aquaponics/turnstile/")
         or request.path in [
             "/aquaponics/health",
             "/aquaponics/server_info",
             "/aquaponics/waitress_info",
-            "/aquaponics/verify",
         ]
         or request.path == "/aquaponics/stream_proxy"
     ):
@@ -305,37 +173,23 @@ def track_visitor():
         logger.error(f"Error tracking visitor: {e}", exc_info=True)
         db.session.rollback()
 
-
 # ---------------------------------------------------------------------------
 # CAMERA CONFIGURATION
 # ---------------------------------------------------------------------------
-# These values describe where the upstream Raspberry Pi (or server) streams live.
-# If the Pi's IP changes on the network, update DEFAULT_STREAM_HOST.
 DEFAULT_STREAM_HOST = "10.0.0.2"
 DEFAULT_STREAM_PORT = 8000
-
-# Paths exposed by the Raspberry Pi streaming script:
-#   /stream0.mjpg  -> physical camera index 0 (fish)
-#   /stream1.mjpg  -> physical camera index 2 (plants) mapped by your Pi script
 DEFAULT_STREAM_PATH_0 = "/stream0.mjpg"  # Fish tank
 DEFAULT_STREAM_PATH_1 = "/stream1.mjpg"  # Plant bed
 
 # ---------------------------------------------------------------------------
 # RELAY / STREAMING TUNING
 # ---------------------------------------------------------------------------
-# The relay creates ONE upstream connection per unique camera URL and shares
-# frames with all connected viewers. This saves bandwidth and CPU.
-WIRELESS_CACHE_DURATION = (
-    15.0  # Seconds of frames to retain (smoothing hiccups)
-)
-WIRELESS_SERVE_DELAY = 2.0  # Delay used by CachedMediaRelay to stabilize order
-WARMUP_TIMEOUT = 15  # Seconds to wait for first frame before giving up
-MAX_CONSECUTIVE_TIMEOUTS = (
-    10  # If client sees this many empty waits, disconnect
-)
-QUEUE_TIMEOUT = 15  # Seconds each client waits for a frame before retry
+WIRELESS_CACHE_DURATION = 15.0
+WIRELESS_SERVE_DELAY = 2.0
+WARMUP_TIMEOUT = 15
+MAX_CONSECUTIVE_TIMEOUTS = 10
+QUEUE_TIMEOUT = 15
 
-# Dictionary that holds active relay objects keyed by the full upstream URL
 _media_relays: Dict[str, CachedMediaRelay] = {}
 _media_lock = threading.Lock()
 
