@@ -1,43 +1,128 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container mt-4">
-  <h2>Aquaponics Access Verification</h2>
-  {% if error %}
-    <div class="alert alert-danger">Verification failed: {{ error|join(', ') }}</div>
-  {% endif %}
-  <form id="turnstile-form" method="post">
-    <div id="turnstile-container"></div>
-    <!-- Button removed (auto-submit) -->
-  </form>
-  <div class="text-muted mt-3" id="verifying-msg">Verifying access…</div>
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header bg-primary text-white">
+          <h2 class="mb-0">🔒 Security Verification</h2>
+        </div>
+        <div class="card-body">
+          <p class="text-center mb-4">Please wait while we verify you're human...</p>
+          
+          {% if error %}
+            <div class="alert alert-danger" role="alert">
+              <strong>Verification failed:</strong>
+              <ul class="mb-0">
+                {% for err in error %}
+                  <li>{{ err }}</li>
+                {% endfor %}
+              </ul>
+              <button class="btn btn-warning btn-sm mt-2" onclick="location.reload()">Try Again</button>
+            </div>
+          {% endif %}
+          
+          <form id="turnstile-form" method="post" class="text-center">
+            <div id="turnstile-container" class="d-inline-block"></div>
+            <div id="status-message" class="mt-3 text-muted"></div>
+          </form>
+          
+          <div id="debug-info" class="mt-3 small text-muted" style="display:none;">
+            <strong>Debug Info:</strong>
+            <div>Site Key: <code>{{ sitekey[:10] if sitekey else 'MISSING' }}...</code></div>
+            <div>Form: <span id="form-status">Initializing...</span></div>
+            <div>Widget: <span id="widget-status">Loading...</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad" async defer></script>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+let widgetId = null;
+let formSubmitted = false;
+
+function onTurnstileLoad() {
+  console.log('[Turnstile] API loaded');
+  document.getElementById('widget-status').textContent = 'API Loaded';
+  
   const sitekey = "{{ sitekey }}";
-  if (!sitekey) {
-    console.error("Missing TURNSTILE_SITE_KEY");
-    document.getElementById('verifying-msg').textContent = "Configuration error: missing site key.";
+  const container = document.getElementById('turnstile-container');
+  const statusMsg = document.getElementById('status-message');
+  
+  if (!sitekey || sitekey === 'None' || sitekey === '') {
+    console.error('[Turnstile] Missing site key');
+    statusMsg.innerHTML = '<span class="text-danger">⚠️ Configuration error: Missing site key</span>';
+    document.getElementById('debug-info').style.display = 'block';
     return;
   }
-  let submitted = false;
-  turnstile.render('#turnstile-container', {
-    sitekey: sitekey,
-    theme: 'auto',
-    callback: function(token) {
-      if (submitted) return;
-      submitted = true;
-      document.getElementById('verifying-msg').textContent = "Access verified, loading…";
-      // Small delay to allow DOM update
-      setTimeout(function() {
-        document.getElementById('turnstile-form').submit();
-      }, 150);
-    },
-    'error-callback': function() {
-      document.getElementById('verifying-msg').textContent = "Verification error. Reloading…";
-      setTimeout(()=>location.reload(), 2000);
-    }
-  });
+  
+  console.log('[Turnstile] Rendering widget with key:', sitekey.substring(0, 10) + '...');
+  document.getElementById('form-status').textContent = 'Rendering widget...';
+  
+  try {
+    widgetId = turnstile.render('#turnstile-container', {
+      sitekey: sitekey,
+      theme: 'auto',
+      size: 'normal',
+      callback: function(token) {
+        console.log('[Turnstile] Challenge completed, token received');
+        document.getElementById('widget-status').textContent = 'Completed';
+        statusMsg.textContent = '✓ Verification successful, redirecting...';
+        
+        if (formSubmitted) {
+          console.log('[Turnstile] Already submitted, ignoring duplicate callback');
+          return;
+        }
+        formSubmitted = true;
+        
+        // Auto-submit after short delay
+        setTimeout(function() {
+          console.log('[Turnstile] Submitting form');
+          document.getElementById('turnstile-form').submit();
+        }, 500);
+      },
+      'error-callback': function() {
+        console.error('[Turnstile] Widget error occurred');
+        document.getElementById('widget-status').textContent = 'Error';
+        statusMsg.innerHTML = '<span class="text-danger">⚠️ Verification error. <a href="javascript:location.reload()">Try again</a></span>';
+      },
+      'expired-callback': function() {
+        console.warn('[Turnstile] Token expired');
+        document.getElementById('widget-status').textContent = 'Expired';
+        statusMsg.innerHTML = '<span class="text-warning">⚠️ Verification expired. <a href="javascript:location.reload()">Try again</a></span>';
+      },
+      'timeout-callback': function() {
+        console.warn('[Turnstile] Timeout occurred');
+        document.getElementById('widget-status').textContent = 'Timeout';
+        statusMsg.innerHTML = '<span class="text-warning">⚠️ Verification timeout. <a href="javascript:location.reload()">Try again</a></span>';
+      }
+    });
+    
+    console.log('[Turnstile] Widget ID:', widgetId);
+    document.getElementById('form-status').textContent = 'Widget rendered (ID: ' + widgetId + ')';
+    document.getElementById('widget-status').textContent = 'Waiting for user...';
+    
+  } catch (e) {
+    console.error('[Turnstile] Render error:', e);
+    document.getElementById('form-status').textContent = 'Render failed: ' + e.message;
+    statusMsg.innerHTML = '<span class="text-danger">⚠️ Failed to load verification widget</span>';
+    document.getElementById('debug-info').style.display = 'block';
+  }
+}
+
+// Show debug panel if Ctrl+D is pressed
+document.addEventListener('keydown', function(e) {
+  if (e.ctrlKey && e.key === 'd') {
+    e.preventDefault();
+    const debugPanel = document.getElementById('debug-info');
+    debugPanel.style.display = debugPanel.style.display === 'none' ? 'block' : 'none';
+  }
 });
+
+// Log page load
+console.log('[Turnstile] Page loaded, waiting for API...');
 </script>
 {% endblock %}

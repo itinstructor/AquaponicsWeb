@@ -9,6 +9,7 @@ This version keeps:
  - Clean structure
  - Rotating log files (no noisy debug routes)
  - Simple relay caching for efficiency
+ - Cloudflare Turnstile protection for all pages
 
 Does NOT include extra debug endpoints or complex UI logic.
 """
@@ -21,6 +22,8 @@ from typing import Dict
 from datetime import datetime, timedelta, timezone
 import requests
 from dotenv import load_dotenv
+
+# Load environment variables
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
@@ -42,14 +45,57 @@ from geomap_module.helpers import get_ip, get_location
 from geomap_module.routes import VISITOR_COOLDOWN_HOURS
 
 # ---------------------------------------------------------------------------
+# TURNSTILE CONFIGURATION
+# ---------------------------------------------------------------------------
+TURNSTILE_SITE_KEY = (
+    os.environ.get("TURNSTILE_SITE_KEY")
+    or os.environ.get("TURNSTILE_SITEKEY")
+)
+TURNSTILE_SECRET = (
+    os.environ.get("TURNSTILE_SECRET")
+    or os.environ.get("TURNSTILE_SECRET_KEY")
+)
+
+# Session duration for Turnstile verification (24 hours)
+TURNSTILE_SESSION_DURATION = 24 * 60 * 60  # seconds
+
+def validate_turnstile(token: str, remoteip: str) -> dict:
+    """Validate Turnstile token with Cloudflare API."""
+    if not TURNSTILE_SECRET:
+        logger.error("TURNSTILE_SECRET not configured")
+        return {"success": False, "error-codes": ["missing-secret"]}
+    if not token:
+        logger.warning(f"Missing Turnstile token from {remoteip}")
+        return {"success": False, "error-codes": ["missing-token"]}
+    try:
+        r = requests.post(
+            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+            data={
+                "secret": TURNSTILE_SECRET,
+                "response": token,
+                "remoteip": remoteip
+            },
+            timeout=5,
+        )
+        result = r.json()
+        if result.get("success"):
+            logger.info(f"Turnstile verification successful for {remoteip}")
+        else:
+            logger.warning(f"Turnstile verification failed for {remoteip}: {result.get('error-codes')}")
+        return result
+    except Exception as e:
+        logger.exception(f"Turnstile verification exception for {remoteip}: {e}")
+        return {"success": False, "error-codes": [f"exception:{str(e)}"]}
+
+# ---------------------------------------------------------------------------
 # FLASK APP SETUP
 # ---------------------------------------------------------------------------
-# static_url_path lets static files be served under /aquaponics/static
 app = Flask(__name__, 
            static_folder='static',
            static_url_path='/aquaponics/static')
 
 app.config['APPLICATION_ROOT'] = '/aquaponics'
+
 # ---------------------------------------------------------------------------
 # DATABASE SETUP
 # ---------------------------------------------------------------------------
@@ -57,7 +103,6 @@ os.makedirs(app.instance_path, exist_ok=True)
 
 VISITORS_DB_PATH = os.path.join(app.instance_path, "visitors.db")
 
-# Set default database URI (required by Flask-SQLAlchemy even with binds)
 app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{VISITORS_DB_PATH}"
 app.config["SQLALCHEMY_BINDS"] = {"visitors": f"sqlite:///{VISITORS_DB_PATH}"}
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -74,8 +119,6 @@ else:
     raise RuntimeError(
         "Secret key file missing. Run generate_secret_key.py to create it."
     )
-
-logger.info(f"Secret key configured: {app.config['SECRET_KEY'][:10]}...")
 
 # Initialize the database with this app
 db.init_app(app)
@@ -94,6 +137,100 @@ with app.app_context():
 
 
 # ---------------------------------------------------------------------------
+# TURNSTILE MIDDLEWARE - PROTECT ALL ROUTES
+# ---------------------------------------------------------------------------
+@app.before_request
+def require_turnstile_verification():
+    """
+    Middleware to require Turnstile verification for all non-excluded routes.
+    Runs before every request to check if user has been verified.
+    """
+    # Paths that don't require Turnstile verification
+    EXCLUDED_PATHS = [
+        '/aquaponics/static/',
+        '/aquaponics/verify',
+        '/aquaponics/health',
+    ]
+    
+    # Check if path is excluded
+    for excluded in EXCLUDED_PATHS:
+        if request.path.startswith(excluded):
+            return None
+    
+    # Check if user has valid Turnstile session
+    turnstile_verified = session.get('turnstile_verified')
+    turnstile_timestamp = session.get('turnstile_timestamp')
+    
+    if turnstile_verified and turnstile_timestamp:
+        # Check if verification is still valid (not expired)
+        elapsed = time.time() - turnstile_timestamp
+        if elapsed < TURNSTILE_SESSION_DURATION:
+            # Valid session, allow request to proceed
+            return None
+        else:
+            # Session expired, clear it
+            session.pop('turnstile_verified', None)
+            session.pop('turnstile_timestamp', None)
+            logger.info(f"Turnstile session expired for {get_ip()}")
+    
+    # No valid verification - redirect to verification page
+    # Store the original URL they were trying to access
+    session['turnstile_redirect_url'] = request.url
+    return redirect(url_for('verify_turnstile'))
+
+# ---------------------------------------------------------------------------
+# TURNSTILE VERIFICATION ROUTE
+# ---------------------------------------------------------------------------
+@app.route("/aquaponics/verify", methods=["GET", "POST"])
+def verify_turnstile():
+    """
+    Standalone verification page that all users must pass through.
+    Automatically submits when Turnstile widget completes.
+    """
+    logger.info(f"Verify route accessed: method={request.method}, path={request.path}")
+    
+    if request.method == "POST":
+        token = request.form.get("cf-turnstile-response")
+        remoteip = (
+            request.headers.get("CF-Connecting-IP")
+            or request.headers.get("X-Forwarded-For")
+            or request.remote_addr
+        )
+        
+        logger.info(f"POST verify: token={'present' if token else 'MISSING'}, ip={remoteip}")
+        logger.debug(f"Form data keys: {list(request.form.keys())}")
+        
+        result = validate_turnstile(token, remoteip)
+        
+        if result.get("success"):
+            # Set session variables
+            session['turnstile_verified'] = True
+            session['turnstile_timestamp'] = time.time()
+            session.permanent = True  # Use permanent session
+            
+            # Redirect to original URL or home
+            redirect_url = session.pop('turnstile_redirect_url', url_for('index'))
+            logger.info(f"Turnstile verification successful, redirecting to {redirect_url}")
+            return redirect(redirect_url)
+        else:
+            # Verification failed
+            error_codes = result.get('error-codes', ['unknown-error'])
+            logger.warning(f"Turnstile verification failed: {error_codes}")
+            return render_template(
+                "turnstile_challenge.html",
+                sitekey=TURNSTILE_SITE_KEY,
+                error=error_codes,
+            )
+    
+    # GET request - show verification page
+    logger.info(f"GET verify: showing challenge page, sitekey={'present' if TURNSTILE_SITE_KEY else 'MISSING'}")
+    return render_template(
+        "turnstile_challenge.html",
+        sitekey=TURNSTILE_SITE_KEY,
+        error=None,
+    )
+
+# ---------------------------------------------------------------------------
 # VISITOR TRACKING MIDDLEWARE
 # ---------------------------------------------------------------------------
 @app.before_request
@@ -107,59 +244,41 @@ def track_visitor():
     if (
         request.path.startswith("/aquaponics/static/")
         or request.path.startswith("/aquaponics/api/")
-        or request.path
-        in [
+        or request.path in [
             "/aquaponics/health",
             "/aquaponics/server_info",
             "/aquaponics/waitress_info",
+            "/aquaponics/verify",
         ]
         or request.path == "/aquaponics/stream_proxy"
     ):
         return
 
-    # Store everything in UTC - no timezone conversion here
     now_utc = datetime.now(timezone.utc)
-    logger.info(
-        f"[{now_utc.isoformat()}] Visitor tracking triggered for path: {request.path}"
-    )
 
     try:
-        # Get visitor's IP address
         ip = get_ip()
-        logger.info(f"Detected IP: {ip}")
-
-        # Check if we've already tracked this IP
-        existing_visitor = VisitorLocation.query.filter_by(
-            ip_address=ip
-        ).first()
+        existing_visitor = VisitorLocation.query.filter_by(ip_address=ip).first()
 
         if existing_visitor:
-            # Check if we should update (cooldown period)
             last_visit = existing_visitor.last_visit
             if last_visit and last_visit.tzinfo is None:
                 last_visit = last_visit.replace(tzinfo=timezone.utc)
 
             recent_cutoff = now_utc - timedelta(hours=VISITOR_COOLDOWN_HOURS)
             if last_visit and last_visit > recent_cutoff:
-                logger.info(f"Visitor {ip} tracked recently, skipping")
                 return
 
-            # Update existing visitor
             existing_visitor.increment_visit(
                 page_visited=request.path,
                 user_agent=request.headers.get("User-Agent", "")[:255],
             )
             db.session.commit()
-            logger.info(
-                f"Updated visitor from {ip} - Visit #{existing_visitor.visit_count}"
-            )
+            logger.info(f"Updated visitor from {ip} - Visit #{existing_visitor.visit_count}")
         else:
-            # New visitor - get location data
             logger.info(f"New visitor {ip}, fetching location data...")
             location_data = get_location(ip)
-            logger.info(f"Location data received: {location_data}")
 
-            # Always create visitor record, even if geolocation fails
             visitor = VisitorLocation(
                 ip_address=ip,
                 lat=location_data.get("lat") if location_data else 0.0,
@@ -167,23 +286,13 @@ def track_visitor():
                 city=location_data.get("city") if location_data else None,
                 region=location_data.get("region") if location_data else None,
                 country=location_data.get("country") if location_data else None,
-                country_code=(
-                    location_data.get("country_code") if location_data else None
-                ),
-                continent=(
-                    location_data.get("continent") if location_data else None
-                ),
+                country_code=(location_data.get("country_code") if location_data else None),
+                continent=(location_data.get("continent") if location_data else None),
                 zipcode=location_data.get("zipcode") if location_data else None,
                 isp=location_data.get("isp") if location_data else None,
-                organization=(
-                    location_data.get("organization") if location_data else None
-                ),
-                timezone=(
-                    location_data.get("timezone") if location_data else None
-                ),
-                currency=(
-                    location_data.get("currency") if location_data else None
-                ),
+                organization=(location_data.get("organization") if location_data else None),
+                timezone=(location_data.get("timezone") if location_data else None),
+                currency=(location_data.get("currency") if location_data else None),
                 user_agent=request.headers.get("User-Agent", "")[:255],
                 page_visited=request.path,
             )
@@ -249,44 +358,16 @@ def get_media_relay(stream_url: str) -> CachedMediaRelay:
 # ---------------------------------------------------------------------------
 # ROUTES: WEB PAGES
 # ---------------------------------------------------------------------------
-@app.route("/aquaponics", methods=["GET", "POST"])
+@app.route("/aquaponics")
+@app.route("/aquaponics/")
 def index():
-    if not session.get("turnstile_ok"):
-        if request.method == "POST":
-            token = request.form.get("cf-turnstile-response")
-            remoteip = (
-                request.headers.get("CF-Connecting-IP")
-                or request.headers.get("X-Forwarded-For")
-                or request.remote_addr
-            )
-            result = validate_turnstile(token, remoteip)
-            if result.get("success"):
-                session["turnstile_ok"] = True
-                return redirect(url_for("index"))
-            return render_template(
-                "turnstile_challenge.html",
-                sitekey=TURNSTILE_SITE_KEY,
-                error=result.get("error-codes"),
-            )
-        return render_template(
-            "turnstile_challenge.html",
-            sitekey=TURNSTILE_SITE_KEY,
-            error=None,
-        )
-
-    """
-    Main page. Builds two proxy URLs (one per camera) and passes them
-    to the template. A timestamp param helps defeat browser caching.
-    """
+    """Main page with camera streams."""
     host = DEFAULT_STREAM_HOST
     port = DEFAULT_STREAM_PORT
 
-    # Build fish camera proxy URL (still goes through this Flask app)
     fish_stream_url = url_for(
         "stream_proxy", host=host, port=port, path=DEFAULT_STREAM_PATH_0
     )
-
-    # Build plant camera proxy URL
     plants_stream_url = url_for(
         "stream_proxy", host=host, port=port, path=DEFAULT_STREAM_PATH_1
     )
@@ -297,83 +378,56 @@ def index():
         plants_stream_url=plants_stream_url,
         host=host,
         port=port,
-        timestamp=int(time.time()),  # basic cache-buster
+        timestamp=int(time.time()),
     )
 
-
-# Champions page route
 @app.route("/aquaponics/champions")
 def champions():
     """Page recognizing Aquaponics Champions."""
     return render_template("champions.html")
-
 
 @app.route("/aquaponics/about")
 def about():
     """Static About page."""
     return render_template("about.html")
 
-
 @app.route("/aquaponics/contact")
 def contact():
     """Static Contact page."""
     return render_template("contact.html")
-
 
 @app.route("/aquaponics/sensors")
 def sensors():
     """Sensor dashboard page (template only here)."""
     return render_template("sensors.html")
 
-
 @app.route("/aquaponics/photos")
 def photos():
     """Photo gallery page."""
     return render_template("photos.html")
-
-
 
 @app.route("/aquaponics/stats")
 def stats_page():
     """HTML page that displays waitress/server streaming statistics."""
     return render_template("waitress_stats.html")
 
-
-
 # ---------------------------------------------------------------------------
 # STREAM PROXY ENDPOINT
 # ---------------------------------------------------------------------------
 @app.route("/aquaponics/stream_proxy")
 def stream_proxy():
-    """
-    Proxies an upstream MJPEG stream through this server.
-    Steps:
-      1. Read query parameters (host, port, path).
-      2. Construct full upstream URL (e.g. http://172.16.1.200:8000/stream0.mjpg).
-      3. Get or create a relay for that URL.
-      4. Attach this browser as a client (queue).
-      5. Yield frame chunks to the browser in a multipart MJPEG response.
-    The browser <img> tag renders the stream continuously.
-    """
-    # Get parameters or fall back to defaults
+    """Proxies an upstream MJPEG stream through this server."""
     host = request.args.get("host", DEFAULT_STREAM_HOST)
     port = int(request.args.get("port", DEFAULT_STREAM_PORT))
     path = request.args.get("path", DEFAULT_STREAM_PATH_0)
 
-    # Build complete upstream URL
     stream_url = f"http://{host}:{port}{path}"
-
     relay = get_media_relay(stream_url)
     client_queue = relay.add_client()
 
     def generate():
         waited = 0.0
-        # Wait for first frame
-        while (
-            relay.last_frame is None
-            and waited < WARMUP_TIMEOUT
-            and relay.running
-        ):
+        while relay.last_frame is None and waited < WARMUP_TIMEOUT and relay.running:
             time.sleep(0.2)
             waited += 0.2
         if relay.last_frame is None:
@@ -385,15 +439,12 @@ def stream_proxy():
                 try:
                     chunk = client_queue.get(timeout=QUEUE_TIMEOUT)
                     consecutive_timeouts = 0
-                    if chunk is None:  # Shutdown signal
+                    if chunk is None:
                         break
                     yield chunk
-                except Exception:  # Queue timeout
+                except Exception:
                     consecutive_timeouts += 1
-                    if (
-                        consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS
-                        or not relay.running
-                    ):
+                    if consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS or not relay.running:
                         break
         finally:
             relay.remove_client(client_queue)
@@ -408,35 +459,24 @@ def stream_proxy():
         },
     )
 
-
 @app.route("/aquaponics/health")
 def health():
-    """
-    Simple health check used by monitoring or load balancers.
-    Returns JSON if the app is alive.
-    """
+    """Simple health check used by monitoring or load balancers."""
     return {"status": "ok"}
-
 
 @app.route("/aquaponics/server_info")
 def server_info():
     import threading
-
     return {
         "server": request.environ.get("SERVER_SOFTWARE", "unknown"),
         "active_threads": len(threading.enumerate()),
-        "media_relays": list(getattr(globals(), "_media_relays", {}).keys()),
+        "media_relays": list(_media_relays.keys()),
     }
-
 
 @app.route("/aquaponics/waitress_info")
 def waitress_info():
-    """
-    Runtime diagnostics focused on Waitress + streaming load.
-    Gives a quick view of thread usage and camera client counts.
-    """
-    import threading, platform, sys, time
-
+    """Runtime diagnostics focused on Waitress + streaming load."""
+    import threading, platform, sys
     all_threads = threading.enumerate()
     thread_names = [t.name for t in all_threads]
     waitress_threads = [n for n in thread_names if "waitress" in n.lower()]
@@ -462,114 +502,29 @@ def waitress_info():
         "relays": relay_stats,
     }
 
-
-@app.route("/aquaponics/debug/visitors")
-def debug_visitors():
-    """Debug endpoint - converts UTC timestamps to Mountain Time for display only."""
-    try:
-        # Import zoneinfo here for display conversion only
-        try:
-            from zoneinfo import ZoneInfo
-
-            MOUNTAIN_TZ = ZoneInfo("America/Denver")
-        except ImportError:
-            from backports.zoneinfo import ZoneInfo
-
-            MOUNTAIN_TZ = ZoneInfo("America/Denver")
-
-        visitors = (
-            VisitorLocation.query.order_by(VisitorLocation.first_visit.desc())
-            .limit(20)
-            .all()
-        )
-
-        def to_mountain(utc_dt):
-            """Convert UTC datetime to Mountain Time for display."""
-            if utc_dt is None:
-                return None
-            if utc_dt.tzinfo is None:
-                utc_dt = utc_dt.replace(tzinfo=timezone.utc)
-            return utc_dt.astimezone(MOUNTAIN_TZ).strftime(
-                "%Y-%m-%d %H:%M:%S %Z"
-            )
-
-        return {
-            "total_count": VisitorLocation.query.count(),
-            "timezone_display": "America/Denver (Mountain Time)",
-            "timezone_storage": "UTC",
-            "recent_visitors": [
-                {
-                    "ip": v.ip_address,
-                    "city": v.city,
-                    "region": v.region,
-                    "country": v.country,
-                    "lat": v.lat,
-                    "lon": v.lon,
-                    "visits": v.visit_count,
-                    "last_visit_mdt": to_mountain(v.last_visit),
-                    "first_visit_mdt": to_mountain(v.first_visit),
-                    "last_visit_utc": (
-                        v.last_visit.isoformat() if v.last_visit else None
-                    ),
-                    "first_visit_utc": (
-                        v.first_visit.isoformat() if v.first_visit else None
-                    ),
-                }
-                for v in visitors
-            ],
-        }
-    except Exception as e:
-        import traceback
-
-        return {"error": str(e), "traceback": traceback.format_exc()}, 500
-
-
-@app.route("/aquaponics/debug/request_info")
-def debug_request_info():
-    """Return headers and environ to help verify forwarded IPs under IIS."""
-    from geomap_module.helpers import get_ip
-
-    return {
-        "detected_ip": get_ip(),
-        "remote_addr": request.remote_addr,
-        "environ_remote_addr": request.environ.get("REMOTE_ADDR"),
-        "headers": {k: v for k, v in request.headers.items()},
-        "x_forwarded_for": request.headers.get("X-Forwarded-For"),
-        "x_real_ip": request.headers.get("X-Real-IP"),
-    }
-
-
 # ---------------------------------------------------------------------------
 # TEMPLATE CONTEXT
 # ---------------------------------------------------------------------------
 @app.context_processor
 def inject_urls():
-    """
-    Makes app_root available in all templates if needed for building links.
-    """
+    """Makes app_root available in all templates if needed for building links."""
     return dict(app_root=app.config["APPLICATION_ROOT"])
-
 
 @app.context_processor
 def inject_script_root():
     """Make script_root available in all templates for building static URLs"""
     return dict(script_root=request.script_root if request.script_root else '')
 
-
 # ---------------------------------------------------------------------------
 # CLEANUP LOGIC
 # ---------------------------------------------------------------------------
 def cleanup_relays():
-    """
-    Called at shutdown to stop all relay threads cleanly.
-    Prevents orphan background threads after server exit.
-    """
+    """Called at shutdown to stop all relay threads cleanly."""
     with _media_lock:
         for relay in _media_relays.values():
             relay.stop()
         _media_relays.clear()
     logger.info("Cached relays cleaned up")
-
 
 # ---------------------------------------------------------------------------
 # GEOIP DATABASE INITIALIZATION
@@ -591,41 +546,6 @@ try:
 except ImportError:
     logger.warning("geoip2 package not installed, geolocation features disabled")
     geo_reader = None
-
-# Load .env from project root
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, ".env"))
-
-# Accept both naming styles
-TURNSTILE_SITE_KEY = (
-    os.environ.get("TURNSTILE_SITE_KEY")
-    or os.environ.get("TURNSTILE_SITEKEY")
-)
-TURNSTILE_SECRET = (
-    os.environ.get("TURNSTILE_SECRET")
-    or os.environ.get("TURNSTILE_SECRET_KEY")
-)
-
-def validate_turnstile(token: str, remoteip: str) -> dict:
-    if not TURNSTILE_SECRET:
-        return {"success": False, "error-codes": ["missing-secret"]}
-    if not token:
-        return {"success": False, "error-codes": ["missing-token"]}
-    try:
-        import requests
-        r = requests.post(
-            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-            data={
-                "secret": TURNSTILE_SECRET,
-                "response": token,
-                "remoteip": remoteip
-            },
-            timeout=5,
-        )
-        return r.json()
-    except Exception as e:
-        return {"success": False, "error-codes": [f"exception:{e}"]}
-
 
 # ---------------------------------------------------------------------------
 # MAIN ENTRY POINT
