@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2>Aquaponics Access Verification</h2>
+  {% if error %}
+    <div class="alert alert-danger">Verification failed: {{ error|join(', ') }}</div>
+  {% endif %}
+  <form id="turnstile-form" method="post">
+    <div id="turnstile-container"></div>
+    <!-- Button removed (auto-submit) -->
+  </form>
+  <div class="text-muted mt-3" id="verifying-msg">Verifying access…</div>
+</div>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const sitekey = "{{ sitekey }}";
+  if (!sitekey) {
+    console.error("Missing TURNSTILE_SITE_KEY");
+    document.getElementById('verifying-msg').textContent = "Configuration error: missing site key.";
+    return;
+  }
+  let submitted = false;
+  turnstile.render('#turnstile-container', {
+    sitekey: sitekey,
+    theme: 'auto',
+    callback: function(token) {
+      if (submitted) return;
+      submitted = true;
+      document.getElementById('verifying-msg').textContent = "Access verified, loading…";
+      // Small delay to allow DOM update
+      setTimeout(function() {
+        document.getElementById('turnstile-form').submit();
+      }, 150);
+    },
+    'error-callback': function() {
+      document.getElementById('verifying-msg').textContent = "Verification error. Reloading…";
+      setTimeout(()=>location.reload(), 2000);
+    }
+  });
+});
+</script>
+{% endblock %}

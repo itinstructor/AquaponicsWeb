@@ -13,12 +13,16 @@ This version keeps:
 Does NOT include extra debug endpoints or complex UI logic.
 """
 
-from flask import Flask, render_template, request, url_for, Response, redirect
+from flask import Flask, render_template, request, url_for, Response, redirect, session, jsonify
 import os
 import threading
 import time
 from typing import Dict
 from datetime import datetime, timedelta, timezone
+import requests
+from dotenv import load_dotenv
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 # Initialize logging FIRST before any other imports
 from logging_config import setup_logging, get_logger
@@ -247,6 +251,29 @@ def get_media_relay(stream_url: str) -> CachedMediaRelay:
 # ---------------------------------------------------------------------------
 @app.route("/aquaponics", methods=["GET", "POST"])
 def index():
+    if not session.get("turnstile_ok"):
+        if request.method == "POST":
+            token = request.form.get("cf-turnstile-response")
+            remoteip = (
+                request.headers.get("CF-Connecting-IP")
+                or request.headers.get("X-Forwarded-For")
+                or request.remote_addr
+            )
+            result = validate_turnstile(token, remoteip)
+            if result.get("success"):
+                session["turnstile_ok"] = True
+                return redirect(url_for("index"))
+            return render_template(
+                "turnstile_challenge.html",
+                sitekey=TURNSTILE_SITE_KEY,
+                error=result.get("error-codes"),
+            )
+        return render_template(
+            "turnstile_challenge.html",
+            sitekey=TURNSTILE_SITE_KEY,
+            error=None,
+        )
+
     """
     Main page. Builds two proxy URLs (one per camera) and passes them
     to the template. A timestamp param helps defeat browser caching.
@@ -564,6 +591,41 @@ try:
 except ImportError:
     logger.warning("geoip2 package not installed, geolocation features disabled")
     geo_reader = None
+
+# Load .env from project root
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+# Accept both naming styles
+TURNSTILE_SITE_KEY = (
+    os.environ.get("TURNSTILE_SITE_KEY")
+    or os.environ.get("TURNSTILE_SITEKEY")
+)
+TURNSTILE_SECRET = (
+    os.environ.get("TURNSTILE_SECRET")
+    or os.environ.get("TURNSTILE_SECRET_KEY")
+)
+
+def validate_turnstile(token: str, remoteip: str) -> dict:
+    if not TURNSTILE_SECRET:
+        return {"success": False, "error-codes": ["missing-secret"]}
+    if not token:
+        return {"success": False, "error-codes": ["missing-token"]}
+    try:
+        import requests
+        r = requests.post(
+            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+            data={
+                "secret": TURNSTILE_SECRET,
+                "response": token,
+                "remoteip": remoteip
+            },
+            timeout=5,
+        )
+        return r.json()
+    except Exception as e:
+        return {"success": False, "error-codes": [f"exception:{e}"]}
+
 
 # ---------------------------------------------------------------------------
 # MAIN ENTRY POINT
