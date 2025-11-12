@@ -222,3 +222,4 @@ geoip_license.txt
 secret_key.txt
 
 
+.env
