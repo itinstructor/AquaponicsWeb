@@ -216,22 +216,17 @@ def get_media_relay(stream_url: str) -> CachedMediaRelay:
 @app.route("/aquaponics/")
 def index():
     """Main page with camera streams."""
-    host = DEFAULT_STREAM_HOST
-    port = DEFAULT_STREAM_PORT
-
     fish_stream_url = url_for(
-        "stream_proxy", host=host, port=port, path=DEFAULT_STREAM_PATH_0
+        "stream_proxy", path=DEFAULT_STREAM_PATH_0
     )
     plants_stream_url = url_for(
-        "stream_proxy", host=host, port=port, path=DEFAULT_STREAM_PATH_1
+        "stream_proxy", path=DEFAULT_STREAM_PATH_1
     )
 
     return render_template(
         "index.html",
         fish_stream_url=fish_stream_url,
         plants_stream_url=plants_stream_url,
-        host=host,
-        port=port,
         timestamp=int(time.time()),
     )
 
