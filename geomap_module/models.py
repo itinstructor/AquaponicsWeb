@@ -13,8 +13,6 @@ class VisitorLocation(db.Model):
     that we tracked visiting the site.
     """
     __tablename__ = 'visitor_location'  # name of the table in the database
-    # optional: if the app uses multiple databases, this chooses which DB
-    __bind_key__ = 'visitors'
 
     # Primary key - unique identifier for each row
     id = db.Column(db.Integer, primary_key=True)

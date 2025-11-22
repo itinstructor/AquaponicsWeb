@@ -28,15 +28,36 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 # Initialize logging FIRST before any other imports
 from logging_config import setup_logging, get_logger
-
-# ensure main_app has its own file handler in addition to waitress_app.log
 setup_logging("main_app.log")
-
 logger = get_logger(__name__)
 logger.info("Application starting...")
 
 # Local modules that handle pulling frames from upstream cameras
 from cached_relay import CachedMediaRelay
+
+# ---------------------------------------------------------------------------
+# STREAM RELAY STATE / CONFIG
+# ---------------------------------------------------------------------------
+WARMUP_TIMEOUT = 5.0          # seconds to wait for first frame
+QUEUE_TIMEOUT = 2.0           # seconds waiting for a frame from client queue
+MAX_CONSECUTIVE_TIMEOUTS = 10 # drop client after this many timeouts
+
+_media_relays: Dict[str, CachedMediaRelay] = {}
+_media_lock = threading.Lock()
+
+def get_media_relay(url: str) -> CachedMediaRelay:
+    """Return (and start if new) a CachedMediaRelay for the upstream URL."""
+    with _media_lock:
+        relay = _media_relays.get(url)
+        if relay is None:
+            logger.info(f"Creating CachedMediaRelay for {url}")
+            relay = CachedMediaRelay(url)
+            _media_relays[url] = relay
+            try:
+                relay.start()
+            except Exception as e:
+                logger.exception(f"Failed starting relay thread for {url}: {e}")
+        return relay
 
 # Database and visitor tracking
 from database import db
@@ -48,219 +69,108 @@ from geomap_module.routes import VISITOR_COOLDOWN_HOURS
 # Turnstile bot protection
 from turnstile import init_turnstile
 
+from fish_cam_config import (
+    DEFAULT_STREAM_HOST as CAM_HOST,
+    DEFAULT_STREAM_PORT as CAM_PORT,
+    DEFAULT_STREAM_PATH_0,
+    DEFAULT_STREAM_PATH_1,
+)
+
+# Apply environment overrides if present
+ENV_HOST = os.getenv("CAMERA_HOST")
+ENV_PORT = os.getenv("CAMERA_PORT")
+
+DEFAULT_STREAM_HOST = ENV_HOST.strip() if ENV_HOST else CAM_HOST
+try:
+    DEFAULT_STREAM_PORT = int(ENV_PORT) if ENV_PORT else CAM_PORT
+except ValueError:
+    logger.warning(f"Invalid CAMERA_PORT '{ENV_PORT}', using {CAM_PORT}")
+    DEFAULT_STREAM_PORT = CAM_PORT
+
+# Paths
+DEFAULT_STREAM_PATH_0 = DEFAULT_STREAM_PATH_0
+DEFAULT_STREAM_PATH_1 = DEFAULT_STREAM_PATH_1
+
 # ---------------------------------------------------------------------------
 # FLASK APP SETUP
 # ---------------------------------------------------------------------------
-app = Flask(__name__, 
-           static_folder='static',
-           static_url_path='/aquaponics/static')
-
+app = Flask(
+    __name__,
+    static_folder='static',
+    static_url_path='/aquaponics/static'
+)
 app.config['APPLICATION_ROOT'] = '/aquaponics'
+
+# Secret key (load or generate)
+SECRET_FILE = os.path.join(BASE_DIR, 'secret.key')
+if os.path.exists(SECRET_FILE):
+    with open(SECRET_FILE, 'rb') as f:
+        app.secret_key = f.read().strip()
+else:
+    app.secret_key = os.urandom(32)
+    try:
+        with open(SECRET_FILE, 'wb') as f:
+            f.write(app.secret_key)
+    except Exception:
+        logger.warning("Could not persist generated secret key")
+
+# Database configuration (adjust if you use a different URI)
+INSTANCE_DIR = r"c:/inetpub/aquaponics/instance"
+os.makedirs(INSTANCE_DIR, exist_ok=True)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{INSTANCE_DIR}/visitors.db"
+app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
+
+with app.app_context():
+    db.init_app(app)
+    try:
+        db.create_all()
+        db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "", 1)
+        logger.info(f"Visitors DB ready: {db_path} exists={os.path.exists(db_path)}")
+    except Exception as e:
+        logger.exception(f"DB init failed: {e}")
+
+try:
+    app.register_blueprint(geomap_bp, url_prefix='/aquaponics/geomap')
+except Exception as e:
+    logger.exception(f"Failed registering geomap blueprint: {e}")
+
+# Global error handlers for visibility
+@app.errorhandler(500)
+def handle_500(err):
+    logger.exception(f"Unhandled 500 error: {err}")
+    return render_template("error.html", message="Internal server error"), 500
+
+@app.errorhandler(404)
+def handle_404(err):
+    return render_template("error.html", message="Not Found"), 404
 
 # ---------------------------------------------------------------------------
 # CONTENT SECURITY POLICY FOR THINGSPEAK IFRAMES
 # ---------------------------------------------------------------------------
+THINGSPEAK_READ_KEY = os.getenv("THINGSPEAK_READ_KEY")  # optional for private channel
+
 @app.after_request
-def set_csp_headers(response):
-    """
-    Set Content Security Policy headers to allow ThingSpeak iframes.
-    Required for sensor dashboard to display embedded charts.
-    """
-    # Check if this is the sensors page (with or without trailing slash)
+def allow_thingspeak(response):
     path = request.path.rstrip('/')
-    
-    logger.debug(f"Processing request path: {path}")
-    
     if path == '/aquaponics/sensors':
-        # Very permissive CSP for sensor page to allow ThingSpeak iframes
         response.headers['Content-Security-Policy'] = (
-            "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; "
-            "frame-src *; "
-            "child-src *; "
-            "connect-src *"
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://thingspeak.com https://thingspeak.mathworks.com https://cdn.jsdelivr.net; "
+            "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://thingspeak.com https://thingspeak.mathworks.com https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://thingspeak.com https://thingspeak.mathworks.com https://cdn.jsdelivr.net; "
+            "style-src-elem 'self' 'unsafe-inline' https://thingspeak.com https://thingspeak.mathworks.com https://cdn.jsdelivr.net; "
+            "img-src 'self' data: https://thingspeak.com https://thingspeak.mathworks.com; "
+            "frame-src https://thingspeak.com https://thingspeak.mathworks.com; "
+            "connect-src 'self' https://thingspeak.com https://thingspeak.mathworks.com https://api.thingspeak.com https://cdn.jsdelivr.net; "
+            "font-src 'self' data: https://cdn.jsdelivr.net;"
         )
-        # Ensure X-Frame-Options is removed
         response.headers.pop('X-Frame-Options', None)
-        response.headers.pop('X-Content-Type-Options', None)
-        
-        logger.info(f"Applied permissive CSP headers for sensors page")
-    
     return response
 
-# ---------------------------------------------------------------------------
-# DATABASE SETUP
-# ---------------------------------------------------------------------------
-os.makedirs(app.instance_path, exist_ok=True)
-
-VISITORS_DB_PATH = os.path.join(app.instance_path, "visitors.db")
-
-app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{VISITORS_DB_PATH}"
-app.config["SQLALCHEMY_BINDS"] = {"visitors": f"sqlite:///{VISITORS_DB_PATH}"}
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-# Set secret key for sessions
-SECRET_KEY_FILE = os.path.join(os.path.dirname(__file__), "secret_key.txt")
-
-if os.path.exists(SECRET_KEY_FILE):
-    with open(SECRET_KEY_FILE, "r", encoding="utf-8") as f:
-        app.config["SECRET_KEY"] = f.read().strip().lstrip('\ufeff')  # Remove BOM
-    logger.info("Secret key loaded from file")
-else:
-    logger.error("secret_key.txt not found! Run generate_secret_key.py first")
-    raise RuntimeError(
-        "Secret key file missing. Run generate_secret_key.py to create it."
-    )
-
-# Initialize the database with this app
-db.init_app(app)
-
-# Register the geomap blueprint for visitor tracking
-app.register_blueprint(geomap_bp, url_prefix="/aquaponics")
-
-# Create database tables if they don't exist
-with app.app_context():
-    try:
-        db.create_all()
-        logger.info("Database tables created/verified")
-    except Exception as e:
-        logger.exception("Failed to create database tables")
-
-# ---------------------------------------------------------------------------
-# INITIALIZE TURNSTILE PROTECTION
-# ---------------------------------------------------------------------------
-init_turnstile(app)
-
-# ---------------------------------------------------------------------------
-# VISITOR TRACKING MIDDLEWARE
-# ---------------------------------------------------------------------------
-@app.before_request
-def track_visitor():
-    """
-    Middleware to track visitor IP locations on each request.
-    Runs before every request to log visitor information.
-    Increments visit counter for returning visitors.
-    """
-    # Skip tracking for static files, API endpoints, health checks, and Turnstile
-    if (
-        request.path.startswith("/aquaponics/static/")
-        or request.path.startswith("/aquaponics/api/")
-        or request.path.startswith("/aquaponics/turnstile/")
-        or request.path in [
-            "/aquaponics/health",
-            "/aquaponics/server_info",
-            "/aquaponics/waitress_info",
-        ]
-        or request.path == "/aquaponics/stream_proxy"
-    ):
-        return
-
-    now_utc = datetime.now(timezone.utc)
-
-    try:
-        ip = get_ip()
-        existing_visitor = VisitorLocation.query.filter_by(ip_address=ip).first()
-
-        if existing_visitor:
-            last_visit = existing_visitor.last_visit
-            if last_visit and last_visit.tzinfo is None:
-                last_visit = last_visit.replace(tzinfo=timezone.utc)
-
-            recent_cutoff = now_utc - timedelta(hours=VISITOR_COOLDOWN_HOURS)
-            if last_visit and last_visit > recent_cutoff:
-                return
-
-            existing_visitor.increment_visit(
-                page_visited=request.path,
-                user_agent=request.headers.get("User-Agent", "")[:255],
-            )
-            db.session.commit()
-            logger.info(f"Updated visitor from {ip} - Visit #{existing_visitor.visit_count}")
-        else:
-            logger.info(f"New visitor {ip}, fetching location data...")
-            location_data = get_location(ip)
-
-            visitor = VisitorLocation(
-                ip_address=ip,
-                lat=location_data.get("lat") if location_data else 0.0,
-                lon=location_data.get("lon") if location_data else 0.0,
-                city=location_data.get("city") if location_data else None,
-                region=location_data.get("region") if location_data else None,
-                country=location_data.get("country") if location_data else None,
-                country_code=(location_data.get("country_code") if location_data else None),
-                continent=(location_data.get("continent") if location_data else None),
-                zipcode=location_data.get("zipcode") if location_data else None,
-                isp=location_data.get("isp") if location_data else None,
-                organization=(location_data.get("organization") if location_data else None),
-                timezone=(location_data.get("timezone") if location_data else None),
-                currency=(location_data.get("currency") if location_data else None),
-                user_agent=request.headers.get("User-Agent", "")[:255],
-                page_visited=request.path,
-            )
-
-            db.session.add(visitor)
-            db.session.commit()
-            logger.info(f"Successfully tracked new visitor from {ip}")
-
-    except Exception as e:
-        logger.error(f"Error tracking visitor: {e}", exc_info=True)
-        db.session.rollback()
-
-# ---------------------------------------------------------------------------
-# CAMERA CONFIGURATION
-# ---------------------------------------------------------------------------
-DEFAULT_STREAM_HOST = "10.0.0.2"
-DEFAULT_STREAM_PORT = 8000
-DEFAULT_STREAM_PATH_0 = "/stream0.mjpg"  # Fish tank
-DEFAULT_STREAM_PATH_1 = "/stream1.mjpg"  # Plant bed
-
-# ---------------------------------------------------------------------------
-# RELAY / STREAMING TUNING
-# ---------------------------------------------------------------------------
-WIRELESS_CACHE_DURATION = 15.0
-WIRELESS_SERVE_DELAY = 2.0
-WARMUP_TIMEOUT = 15
-MAX_CONSECUTIVE_TIMEOUTS = 10
-QUEUE_TIMEOUT = 15
-
-_media_relays: Dict[str, CachedMediaRelay] = {}
-_media_lock = threading.Lock()
-
-
-def get_media_relay(stream_url: str) -> CachedMediaRelay:
-    with _media_lock:
-        relay = _media_relays.get(stream_url)
-        if relay is None:
-            relay = CachedMediaRelay(
-                stream_url,
-                cache_duration=WIRELESS_CACHE_DURATION,
-                serve_delay=WIRELESS_SERVE_DELAY,
-            )
-            relay.start()
-            _media_relays[stream_url] = relay
-            logger.info(f"[CachedRelayFactory] Created {stream_url}")
-        return relay
-
-
-# ---------------------------------------------------------------------------
-# ROUTES: WEB PAGES
-# ---------------------------------------------------------------------------
-@app.route("/aquaponics")
-@app.route("/aquaponics/")
-def index():
-    """Main page with camera streams."""
-    fish_stream_url = url_for(
-        "stream_proxy", path=DEFAULT_STREAM_PATH_0
-    )
-    plants_stream_url = url_for(
-        "stream_proxy", path=DEFAULT_STREAM_PATH_1
-    )
-
-    return render_template(
-        "index.html",
-        fish_stream_url=fish_stream_url,
-        plants_stream_url=plants_stream_url,
-        timestamp=int(time.time()),
-    )
+@app.route("/aquaponics/sensors")
+def sensors():
+    return render_template("sensors.html", ts_read_key=THINGSPEAK_READ_KEY)
 
 @app.route("/aquaponics/champions")
 def champions():
@@ -277,21 +187,6 @@ def contact():
     """Static Contact page."""
     return render_template("contact.html")
 
-@app.route("/aquaponics/sensors")
-def sensors():
-    """Sensor dashboard page (template only here)."""
-    logger.info("Sensors page route accessed")
-    return render_template("sensors.html")
-
-@app.route("/aquaponics/debug/headers")
-def debug_headers():
-    """Debug endpoint to check response headers."""
-    from flask import make_response
-    logger.info("Debug headers route accessed")
-    resp = make_response(f"<h1>Headers Debug</h1><p>Request path: {request.path}</p><p>Check logs for CSP headers</p>")
-    resp.headers['Content-Type'] = 'text/html'
-    return resp
-
 @app.route("/aquaponics/photos")
 def photos():
     """Photo gallery page."""
@@ -305,24 +200,42 @@ def stats_page():
 # ---------------------------------------------------------------------------
 # STREAM PROXY ENDPOINT
 # ---------------------------------------------------------------------------
+@app.route("/aquaponics/relay_status")
+def relay_status():
+    """Inspect current relay state (diagnostic)."""
+    data = {}
+    with _media_lock:
+        for url, relay in _media_relays.items():
+            with relay.lock:
+                data[url] = {
+                    "clients": len(relay.clients),
+                    "running": relay.running,
+                    "has_frame": relay.last_frame is not None,
+                }
+    return jsonify(data)
+
 @app.route("/aquaponics/stream_proxy")
 def stream_proxy():
-    """Proxies an upstream MJPEG stream through this server."""
-    host = request.args.get("host", DEFAULT_STREAM_HOST)
-    port = int(request.args.get("port", DEFAULT_STREAM_PORT))
     path = request.args.get("path", DEFAULT_STREAM_PATH_0)
-
+    host = DEFAULT_STREAM_HOST
+    port = DEFAULT_STREAM_PORT
     stream_url = f"http://{host}:{port}{path}"
+    logger.info(f"Proxy upstream={stream_url}")
     relay = get_media_relay(stream_url)
     client_queue = relay.add_client()
+    logger.info(f"Added client to relay {stream_url}; total_clients={len(relay.clients)}")
 
     def generate():
         waited = 0.0
+        # Wait for first frame
         while relay.last_frame is None and waited < WARMUP_TIMEOUT and relay.running:
-            time.sleep(0.2)
-            waited += 0.2
+            time.sleep(0.25)
+            waited += 0.25
         if relay.last_frame is None:
+            logger.warning(f"No frame received from {stream_url} after {WARMUP_TIMEOUT}s; closing client.")
             relay.remove_client(client_queue)
+            # Send minimal multipart boundary with text to avoid blank image tag
+            yield b"--frame\r\nContent-Type: text/plain\r\n\r\nStream unavailable\r\n"
             return
         consecutive_timeouts = 0
         try:
@@ -331,14 +244,24 @@ def stream_proxy():
                     chunk = client_queue.get(timeout=QUEUE_TIMEOUT)
                     consecutive_timeouts = 0
                     if chunk is None:
+                        logger.info(f"Client queue close signal {stream_url}")
                         break
-                    yield chunk
-                except Exception:
+                    # Wrap raw JPEG if relay did not add multipart boundary
+                    if not chunk.startswith(b"--frame"):
+                        yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + chunk + b"\r\n"
+                    else:
+                        yield chunk
+                except Exception as e:
                     consecutive_timeouts += 1
+                    logger.warning(f"Queue read exception ({e}) for {stream_url}; timeout #{consecutive_timeouts}")
+                    if consecutive_timeouts == 3:
+                        logger.warning(f"Timeouts x3 reading queue for {stream_url}")
                     if consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS or not relay.running:
+                        logger.error(f"Abandoning stream {stream_url}; consecutive_timeouts={consecutive_timeouts}")
                         break
         finally:
             relay.remove_client(client_queue)
+            logger.info(f"Client removed from {stream_url}; remaining={len(relay.clients)}")
 
     return Response(
         generate(),
@@ -446,3 +369,51 @@ if __name__ == "__main__":
     atexit.register(cleanup_relays)
     print("Development mode ONLY (use waitress_app.py in production).")
     app.run(host="127.0.0.1", port=5000, debug=False)
+
+@app.route("/")
+def root_redirect():
+    return redirect("/aquaponics/")
+
+@app.route("/aquaponics")
+@app.route("/aquaponics/")
+def index():
+    fish_stream_url = url_for("stream_proxy", path=DEFAULT_STREAM_PATH_0)
+    plants_stream_url = url_for("stream_proxy", path=DEFAULT_STREAM_PATH_1)
+    return render_template("index.html",
+                           fish_stream_url=fish_stream_url,
+                           plants_stream_url=plants_stream_url,
+                           timestamp=int(time.time()))
+
+@app.route("/aquaponics/stream_probe")
+def stream_probe():
+    host = request.args.get("host", DEFAULT_STREAM_HOST)
+    port = int(request.args.get("port", DEFAULT_STREAM_PORT))
+    path = request.args.get("path", DEFAULT_STREAM_PATH_0)
+    url = f"http://{host}:{port}{path}"
+    import requests, traceback
+    info = {"upstream_url": url}
+    try:
+        r = requests.get(url, timeout=5, stream=True)
+        info["status_code"] = r.status_code
+        info["content_type"] = r.headers.get("Content-Type")
+        # Read a small chunk
+        chunk = next(r.iter_content(chunk_size=4096), b"")
+        info["first_chunk_len"] = len(chunk)
+        info["first_chunk_prefix"] = chunk[:32].hex()
+    except Exception as e:
+        info["error"] = str(e)
+        info["traceback"] = traceback.format_exc()
+    return jsonify(info)
+
+@app.route("/aquaponics/relay_dump")
+def relay_dump():
+    dump = {}
+    with _media_lock:
+        for url, relay in _media_relays.items():
+            with relay.lock:
+                dump[url] = {
+                    "clients": len(relay.clients),
+                    "running": relay.running,
+                    "has_frame": relay.last_frame is not None,
+                }
+    return jsonify(dump)
