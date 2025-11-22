@@ -13,11 +13,19 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
 # Initialize logging FIRST - force initialization for IIS
-from logging_config import setup_logging, get_logger, LOG_DIR, MountainFormatter
+from logging_config import setup_logging
+import logging_config
 
-# Setup with waitress_app.log as the target
-setup_logging("waitress_app.log", force=True)
-logger = get_logger(__name__)
+# configure logging for the Waitress process first
+setup_logging("waitress_app.log")
+
+# Now import the Flask app (which may also call setup_logging to add its own file)
+import main_app
+
+# Expose the Flask WSGI application object for Waitress
+app = getattr(main_app, "app", None)
+if app is None:
+    raise RuntimeError("Flask app not found in main_app (expected variable 'app')")
 
 # IMMEDIATELY configure all waitress loggers to use our handlers
 # This must happen before waitress is imported or used
@@ -38,21 +46,17 @@ for logger_name in waitress_loggers:
     for handler in root_logger.handlers:
         wl.addHandler(handler)
 
+logger = logging.getLogger(__name__)
+
 logger.info("=== Waitress WSGI app initializing ===")
-logger.info(f"All logging configured to: {os.path.join(LOG_DIR, 'waitress_app.log')}")
 logger.info(f"Script directory: {SCRIPT_DIR}")
 logger.info(f"Current working directory: {os.getcwd()}")
 logger.info(f"Python version: {sys.version}")
 logger.info(f"Python executable: {sys.executable}")
 
-# Now import Flask app
-try:
-    logger.info("Importing main_app...")
-    from main_app import app
-    logger.info("Flask app imported successfully")
-except Exception as e:
-    logger.exception(f"Failed to import main_app: {e}")
-    raise
+# safer: use logging_config.LOG_DIR if present, otherwise fall back to ./logs
+log_dir = getattr(logging_config, "LOG_DIR", os.path.join(os.path.dirname(__file__), "logs"))
+logger.info(f"All logging configured to: {os.path.join(log_dir, 'waitress_app.log')}")
 
 THREADS = 64
 

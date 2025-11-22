@@ -28,9 +28,11 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 # Initialize logging FIRST before any other imports
 from logging_config import setup_logging, get_logger
-setup_logging("main_app.log")
-logger = get_logger(__name__)
 
+# ensure main_app has its own file handler in addition to waitress_app.log
+setup_logging("main_app.log")
+
+logger = get_logger(__name__)
 logger.info("Application starting...")
 
 # Local modules that handle pulling frames from upstream cameras
@@ -54,6 +56,36 @@ app = Flask(__name__,
            static_url_path='/aquaponics/static')
 
 app.config['APPLICATION_ROOT'] = '/aquaponics'
+
+# ---------------------------------------------------------------------------
+# CONTENT SECURITY POLICY FOR THINGSPEAK IFRAMES
+# ---------------------------------------------------------------------------
+@app.after_request
+def set_csp_headers(response):
+    """
+    Set Content Security Policy headers to allow ThingSpeak iframes.
+    Required for sensor dashboard to display embedded charts.
+    """
+    # Check if this is the sensors page (with or without trailing slash)
+    path = request.path.rstrip('/')
+    
+    logger.debug(f"Processing request path: {path}")
+    
+    if path == '/aquaponics/sensors':
+        # Very permissive CSP for sensor page to allow ThingSpeak iframes
+        response.headers['Content-Security-Policy'] = (
+            "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; "
+            "frame-src *; "
+            "child-src *; "
+            "connect-src *"
+        )
+        # Ensure X-Frame-Options is removed
+        response.headers.pop('X-Frame-Options', None)
+        response.headers.pop('X-Content-Type-Options', None)
+        
+        logger.info(f"Applied permissive CSP headers for sensors page")
+    
+    return response
 
 # ---------------------------------------------------------------------------
 # DATABASE SETUP
@@ -248,7 +280,17 @@ def contact():
 @app.route("/aquaponics/sensors")
 def sensors():
     """Sensor dashboard page (template only here)."""
+    logger.info("Sensors page route accessed")
     return render_template("sensors.html")
+
+@app.route("/aquaponics/debug/headers")
+def debug_headers():
+    """Debug endpoint to check response headers."""
+    from flask import make_response
+    logger.info("Debug headers route accessed")
+    resp = make_response(f"<h1>Headers Debug</h1><p>Request path: {request.path}</p><p>Check logs for CSP headers</p>")
+    resp.headers['Content-Type'] = 'text/html'
+    return resp
 
 @app.route("/aquaponics/photos")
 def photos():
