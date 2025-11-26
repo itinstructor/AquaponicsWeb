@@ -57,7 +57,11 @@ def setup_logging(log_filename="main_app.log", level=logging.INFO, force=False):
 
     # Create rotating file handler for this filename
     handler = logging.handlers.TimedRotatingFileHandler(
-        log_path, when="midnight", interval=1, backupCount=14, encoding="utf-8"
+        log_path,
+        when="midnight",
+        interval=1,
+        backupCount=14,  # keep 14 days of logs
+        encoding="utf-8"
     )
     handler.suffix = "%Y-%m-%d.log"
     formatter = MountainFormatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")

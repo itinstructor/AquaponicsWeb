@@ -11,7 +11,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 
 # Clear Python cache
 Write-Output "Clearing Python bytecode cache..."
-Get-ChildItem -Path c:\inetpub\nornnet -Include __pycache__ -Recurse -Force | Remove-Item -Recurse -Force
+.\clear_bytecode.ps1
 
 Write-Output "Recycling IIS application pool '$PoolName'..."
 

@@ -14,8 +14,13 @@ This version keeps:
 Does NOT include extra debug endpoints or complex UI logic.
 """
 
-from flask import Flask, render_template, request, url_for, Response, redirect, session, jsonify
 import os
+from logging_config import setup_logging, get_logger
+
+setup_logging("main_app.log")  # MUST be first
+
+# Now import Flask and the rest
+from flask import Flask, render_template, request, url_for, Response, redirect, session, jsonify
 import threading
 import time
 from typing import Dict
@@ -26,11 +31,12 @@ from dotenv import load_dotenv
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-# Initialize logging FIRST before any other imports
-from logging_config import setup_logging, get_logger
-setup_logging("main_app.log")
 logger = get_logger(__name__)
 logger.info("Application starting...")
+
+# TEST: Logging works at startup
+logger = get_logger("test_logger")
+logger.info("TEST: Logging works at startup")
 
 # Local modules that handle pulling frames from upstream cameras
 from cached_relay import CachedMediaRelay
@@ -42,21 +48,16 @@ WARMUP_TIMEOUT = 5.0          # seconds to wait for first frame
 QUEUE_TIMEOUT = 2.0           # seconds waiting for a frame from client queue
 MAX_CONSECUTIVE_TIMEOUTS = 10 # drop client after this many timeouts
 
-_media_relays: Dict[str, CachedMediaRelay] = {}
+_media_relays = {}
 _media_lock = threading.Lock()
 
-def get_media_relay(url: str) -> CachedMediaRelay:
-    """Return (and start if new) a CachedMediaRelay for the upstream URL."""
+def get_media_relay(url):
     with _media_lock:
         relay = _media_relays.get(url)
         if relay is None:
-            logger.info(f"Creating CachedMediaRelay for {url}")
             relay = CachedMediaRelay(url)
             _media_relays[url] = relay
-            try:
-                relay.start()
-            except Exception as e:
-                logger.exception(f"Failed starting relay thread for {url}: {e}")
+            relay.start()
         return relay
 
 # Database and visitor tracking
@@ -119,6 +120,9 @@ INSTANCE_DIR = r"c:/inetpub/aquaponics/instance"
 os.makedirs(INSTANCE_DIR, exist_ok=True)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{INSTANCE_DIR}/visitors.db"
+app.config["SQLALCHEMY_BINDS"] = {
+    "visitors": "sqlite:///C:/inetpub/aquaponics/instance/visitors.db"
+}
 app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
 
 with app.app_context():
@@ -417,3 +421,8 @@ def relay_dump():
                     "has_frame": relay.last_frame is not None,
                 }
     return jsonify(dump)
+
+import logging
+for name in ("werkzeug", "flask.app"):
+    logging.getLogger(name).setLevel(logging.INFO)
+    logging.getLogger(name).propagate = True
