@@ -72,10 +72,10 @@ CHALLENGE_PAGE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Security Verification - Aquaponics System</title>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            background: #181c24;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -83,21 +83,22 @@ CHALLENGE_PAGE = """
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
         .challenge-card {
-            background: white;
+            background: #23272f;
             border-radius: 1rem;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
             max-width: 500px;
             width: 100%;
         }
         .card-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: linear-gradient(135deg, #222c3c 0%, #2a5298 100%);
+            color: #fff;
             border-radius: 1rem 1rem 0 0 !important;
             padding: 2rem;
             text-align: center;
         }
         .card-body {
             padding: 2rem;
+            color: #e0e0e0;
         }
         .turnstile-container {
             display: flex;
@@ -115,6 +116,18 @@ CHALLENGE_PAGE = """
             display: block;
         }
         {% endif %}
+        .alert {
+            background: #2d323c;
+            color: #ffb4b4;
+            border: 1px solid #ffb4b4;
+        }
+        .text-muted {
+            color: #b0b8c1 !important;
+        }
+        .btn-primary {
+            background-color: #2a5298;
+            border-color: #2a5298;
+        }
     </style>
 </head>
 <body>
@@ -140,7 +153,7 @@ CHALLENGE_PAGE = """
                          data-sitekey="{{ site_key }}"
                          data-callback="onTurnstileSuccess"
                          data-error-callback="onTurnstileError"
-                         data-theme="auto"></div>
+                         data-theme="dark"></div>
                 </div>
             </form>
             
