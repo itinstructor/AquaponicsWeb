@@ -75,7 +75,7 @@ CHALLENGE_PAGE = """
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
-            background: #181c24;
+            background: #000;
             min-height: 100vh;
             display: flex;
             align-items: center;

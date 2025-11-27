@@ -14,6 +14,7 @@ This version keeps:
 Does NOT include extra debug endpoints or complex UI logic.
 """
 
+from datetime import datetime
 import os
 from logging_config import setup_logging, get_logger
 
@@ -23,8 +24,6 @@ setup_logging("main_app.log")  # MUST be first
 from flask import Flask, render_template, request, url_for, Response, redirect, session, jsonify
 import threading
 import time
-from typing import Dict
-from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -426,3 +425,29 @@ import logging
 for name in ("werkzeug", "flask.app"):
     logging.getLogger(name).setLevel(logging.INFO)
     logging.getLogger(name).propagate = True
+
+@app.before_request
+def track_visitor():
+    try:
+        ip = request.remote_addr
+        ua = request.headers.get("User-Agent", "")[:250]
+        now = datetime.utcnow()
+
+        v = VisitorLocation.query.filter_by(ip_address=ip).first()
+        if v:
+            v.last_visit = now
+            v.visit_count = (v.visit_count or 0) + 1
+            v.user_agent = ua
+        else:
+            v = VisitorLocation(
+                ip_address=ip,
+                last_visit=now,
+                first_visit=now,
+                visit_count=1,
+                user_agent=ua,
+            )
+            db.session.add(v)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.warning(f"Visit not recorded: {e}")

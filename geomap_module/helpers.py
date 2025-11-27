@@ -1,10 +1,12 @@
-﻿from flask import request
+﻿import requests
+from flask import request
 import logging
 from functools import lru_cache
 import os
 # --- Optimization: Moved imports to the top of the file ---
 import socket
 # --- End Optimization ---
+
 
 def _load_api_key():
     """
@@ -50,10 +52,13 @@ GEOIP_DB_PATH = r"C:\inetpub\aquaponics\geoip\GeoLite2-City.mmdb"
 # --- Optimization: Initialize the GeoIP database reader once at startup. ---
 # This avoids re-opening the file on every lookup, which is much more efficient.
 # The reader object is thread-safe and designed for reuse.
+
+
 def _init_geoip_reader():
     """Initializes the GeoIP reader, returns None if the DB file is missing."""
     if not os.path.exists(GEOIP_DB_PATH):
-        logging.warning(f"GeoIP database not found at {GEOIP_DB_PATH}. Local lookup disabled.")
+        logging.warning(
+            f"GeoIP database not found at {GEOIP_DB_PATH}. Local lookup disabled.")
         return None
     try:
         # Defer import until it's actually needed. This prevents startup errors if geoip2 is not installed.
@@ -62,6 +67,7 @@ def _init_geoip_reader():
     except Exception:
         logging.exception("Failed to initialize GeoIP database reader.")
         return None
+
 
 GEOIP_READER = _init_geoip_reader()
 # This is a list of IP address prefixes that are used for private networks (like your home Wi-Fi).
@@ -171,8 +177,8 @@ def _norm(v):
 
 
 # --- Refactoring: Create a reusable requests session for efficiency ---
-import requests
 HTTP_SESSION = requests.Session()
+
 
 @lru_cache(maxsize=10000)
 def get_location(ip: str):
@@ -199,9 +205,10 @@ def get_location(ip: str):
                 return {k: _norm(v) if k not in ("lat", "lon") else (float(v) if v is not None else None)
                         for k, v in result.items()}
         except Exception:
-            logging.exception(f"Provider {provider_func.__name__} failed for {ip}")
-    
-    return None # All providers failed
+            logging.exception(
+                f"Provider {provider_func.__name__} failed for {ip}")
+
+    return None  # All providers failed
 
 
 def _provider_local(ip: str):
@@ -212,14 +219,16 @@ def _provider_local(ip: str):
 def _provider_ipgeolocation(ip: str):
     """Provider 2: ipgeolocation.io API."""
     if not IPGEOLOCATION_API_KEY:
-        logging.debug("IP geolocation API key not available; skipping ipgeolocation.io lookup")
+        logging.debug(
+            "IP geolocation API key not available; skipping ipgeolocation.io lookup")
         return None
 
     url = f"https://api.ipgeolocation.io/ipgeo?apiKey={IPGEOLOCATION_API_KEY}&ip={ip}"
     r = HTTP_SESSION.get(url, timeout=5)
-    
+
     if not r.ok:
-        logging.warning("ipgeolocation lookup failed %s for %s: %s", r.status_code, ip, r.text)
+        logging.warning("ipgeolocation lookup failed %s for %s: %s",
+                        r.status_code, ip, r.text)
         return None
 
     d = r.json()
@@ -288,5 +297,5 @@ def _provider_revdns(ip: str):
             "timezone": None,
             "currency": None,
         }
-    except Exception: # Should be rare
+    except Exception:  # Should be rare
         return None

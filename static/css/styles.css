@@ -28,7 +28,7 @@ a:hover {
 
 /* Container to center content and limit width on large screens */
 .container {
-    max-width: 1200px;                       /* Don't get too wide on big monitors */
+    max-width: 1340px;                       /* Don't get too wide on big monitors */
     margin: 0 auto;                          /* Center the container */
 }
 
