@@ -118,11 +118,15 @@ else:
 INSTANCE_DIR = r"c:/inetpub/aquaponics/instance"
 os.makedirs(INSTANCE_DIR, exist_ok=True)
 
-app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{INSTANCE_DIR}/visitors.db"
-app.config["SQLALCHEMY_BINDS"] = {
-    "visitors": "sqlite:///C:/inetpub/aquaponics/instance/visitors.db"
-}
-app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
+# Set both databases to be in the instance folder
+FISH_BLOG_DB_PATH = os.path.join(app.instance_path, "fish_blog.db")
+VISITORS_DB_PATH = os.path.join(app.instance_path, "visitors.db")
+
+app.config["SQLALCHEMY_DATABASE_URI"] = (
+    f"sqlite:///{FISH_BLOG_DB_PATH}"  # main DB
+)
+app.config["SQLALCHEMY_BINDS"] = {"visitors": f"sqlite:///{VISITORS_DB_PATH}"}
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 with app.app_context():
     db.init_app(app)
@@ -137,6 +141,33 @@ try:
     app.register_blueprint(geomap_bp, url_prefix='/aquaponics/geomap')
 except Exception as e:
     logger.exception(f"Failed registering geomap blueprint: {e}")
+
+# Register the blog blueprint
+logger.info("Attempting to import Aquaponics Blog blueprint...")
+try:
+    from blog import blog_bp  # Import here, just before registration
+
+    logger.info(f"Blog blueprint imported: {blog_bp}")
+    app.register_blueprint(blog_bp, url_prefix="/aquaponics")
+    logger.info("Blog blueprint registered at /aquaponics")
+except Exception as e:
+    logger.exception("Failed to register Aquaponics Blog blueprint")
+    logger.error(f"Error details: {str(e)}")
+
+# Import BlogPost model for the index page query
+try:
+    from blog.models import BlogPost
+    logger.info("Successfully imported BlogPost model for index page.")
+except ImportError:
+    BlogPost = None # Set to None if import fails, so app doesn't crash
+
+# Create database tables if they don't exist
+with app.app_context():
+    try:
+        db.create_all()
+        logger.info("Database tables created/verified")
+    except Exception as e:
+        logger.exception("Failed to create database tables")
 
 # Global error handlers for visibility
 @app.errorhandler(500)
