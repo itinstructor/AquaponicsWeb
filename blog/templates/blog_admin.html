@@ -218,7 +218,7 @@
                                                     <input type="password" class="form-control"
                                                         id="new_password{{ user.id }}" name="new_password" required>
                                                     <small class="form-text text-muted">
-                                                        Requirements: 16+ characters, at least 3 of (uppercase,
+                                                        Requirements: 12+ characters, at least 3 of (uppercase,
                                                         lowercase, number, symbol)
                                                     </small>
                                                 </div>
@@ -270,9 +270,13 @@
                             <label for="new_password" class="form-label">Password</label>
                             <input type="password" class="form-control" id="new_password" name="password" required>
                             <small class="form-text text-muted">
-                                Requirements: 16+ characters, at least 3 of (uppercase, lowercase, number,
+                                Requirements: 12+ characters, at least 3 of (uppercase, lowercase, number,
                                 symbol)
                             </small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirm_new_password" class="form-label">Confirm Password</label>
+                            <input type="password" class="form-control" id="confirm_new_password" name="confirm_password" required>
                         </div>
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="new_is_admin" name="is_admin">
