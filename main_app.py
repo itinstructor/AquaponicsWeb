@@ -14,41 +14,52 @@ This version keeps:
 Does NOT include extra debug endpoints or complex UI logic.
 """
 
+import logging
+from fish_cam_config import (
+    DEFAULT_STREAM_HOST as CAM_HOST,
+    DEFAULT_STREAM_PORT as CAM_PORT,
+    DEFAULT_STREAM_PATH_0,
+    DEFAULT_STREAM_PATH_1,
+)
+from turnstile import init_turnstile
+from geomap_module.routes import VISITOR_COOLDOWN_HOURS
+from geomap_module.helpers import get_ip, get_location
+from geomap_module.models import VisitorLocation
+from geomap_module import geomap_bp
+from database import db
+from cached_relay import CachedMediaRelay
+from dotenv import load_dotenv
+import time
+import threading
+from flask import Flask, render_template, request, url_for, Response, redirect, session, jsonify
 from datetime import datetime
 import os
 from logging_config import setup_logging, get_logger
 
-setup_logging("main_app.log")  # MUST be first
+setup_logging("main_app.log")
+logger = get_logger("main_app")
+logger.info("Application starting...")
+
+# DO NOT reassign logger variable after this point
+# All subsequent code should use: logger.info(...) not test_logger.info(...)
 
 # Now import Flask and the rest
-from flask import Flask, render_template, request, url_for, Response, redirect, session, jsonify
-import threading
-import time
-from dotenv import load_dotenv
-
 # Load environment variables
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-logger = get_logger(__name__)
-logger.info("Application starting...")
-
-# TEST: Logging works at startup
-logger = get_logger("test_logger")
-logger.info("TEST: Logging works at startup")
-
-# Local modules that handle pulling frames from upstream cameras
-from cached_relay import CachedMediaRelay
+logger.info("Environment variables loaded")  # ADD: confirm this step works
 
 # ---------------------------------------------------------------------------
 # STREAM RELAY STATE / CONFIG
 # ---------------------------------------------------------------------------
 WARMUP_TIMEOUT = 5.0          # seconds to wait for first frame
 QUEUE_TIMEOUT = 2.0           # seconds waiting for a frame from client queue
-MAX_CONSECUTIVE_TIMEOUTS = 10 # drop client after this many timeouts
+MAX_CONSECUTIVE_TIMEOUTS = 10  # drop client after this many timeouts
 
 _media_relays = {}
 _media_lock = threading.Lock()
+
 
 def get_media_relay(url):
     with _media_lock:
@@ -59,22 +70,11 @@ def get_media_relay(url):
             relay.start()
         return relay
 
+
 # Database and visitor tracking
-from database import db
-from geomap_module import geomap_bp
-from geomap_module.models import VisitorLocation
-from geomap_module.helpers import get_ip, get_location
-from geomap_module.routes import VISITOR_COOLDOWN_HOURS
 
 # Turnstile bot protection
-from turnstile import init_turnstile
 
-from fish_cam_config import (
-    DEFAULT_STREAM_HOST as CAM_HOST,
-    DEFAULT_STREAM_PORT as CAM_PORT,
-    DEFAULT_STREAM_PATH_0,
-    DEFAULT_STREAM_PATH_1,
-)
 
 # Apply environment overrides if present
 ENV_HOST = os.getenv("CAMERA_HOST")
@@ -118,6 +118,8 @@ else:
 INSTANCE_DIR = r"c:/inetpub/aquaponics/instance"
 os.makedirs(INSTANCE_DIR, exist_ok=True)
 
+logger.info(f"Instance directory ready: {INSTANCE_DIR}")  # ADD: confirm this step works
+
 # Set both databases to be in the instance folder
 FISH_BLOG_DB_PATH = os.path.join(app.instance_path, "fish_blog.db")
 VISITORS_DB_PATH = os.path.join(app.instance_path, "visitors.db")
@@ -132,13 +134,18 @@ with app.app_context():
     db.init_app(app)
     try:
         db.create_all()
-        db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "", 1)
-        logger.info(f"Visitors DB ready: {db_path} exists={os.path.exists(db_path)}")
+        db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace(
+            "sqlite:///", "", 1)
+        logger.info(
+            f"Visitors DB ready: {db_path} exists={os.path.exists(db_path)}")
     except Exception as e:
         logger.exception(f"DB init failed: {e}")
 
+logger.info("Database initialization complete")  # ADD: confirm this step works
+
 try:
     app.register_blueprint(geomap_bp, url_prefix='/aquaponics/geomap')
+    logger.info("Geomap blueprint registered")  # ADD: confirm this step works
 except Exception as e:
     logger.exception(f"Failed registering geomap blueprint: {e}")
 
@@ -159,7 +166,7 @@ try:
     from blog.models import BlogPost
     logger.info("Successfully imported BlogPost model for index page.")
 except ImportError:
-    BlogPost = None # Set to None if import fails, so app doesn't crash
+    BlogPost = None  # Set to None if import fails, so app doesn't crash
 
 # Create database tables if they don't exist
 with app.app_context():
@@ -170,19 +177,25 @@ with app.app_context():
         logger.exception("Failed to create database tables")
 
 # Global error handlers for visibility
+
+
 @app.errorhandler(500)
 def handle_500(err):
     logger.exception(f"Unhandled 500 error: {err}")
     return render_template("error.html", message="Internal server error"), 500
 
+
 @app.errorhandler(404)
 def handle_404(err):
     return render_template("error.html", message="Not Found"), 404
 
+
 # ---------------------------------------------------------------------------
 # CONTENT SECURITY POLICY FOR THINGSPEAK IFRAMES
 # ---------------------------------------------------------------------------
-THINGSPEAK_READ_KEY = os.getenv("THINGSPEAK_READ_KEY")  # optional for private channel
+# optional for private channel
+THINGSPEAK_READ_KEY = os.getenv("THINGSPEAK_READ_KEY")
+
 
 @app.after_request
 def allow_thingspeak(response):
@@ -202,29 +215,35 @@ def allow_thingspeak(response):
         response.headers.pop('X-Frame-Options', None)
     return response
 
+
 @app.route("/aquaponics/sensors")
 def sensors():
     return render_template("sensors.html", ts_read_key=THINGSPEAK_READ_KEY)
+
 
 @app.route("/aquaponics/champions")
 def champions():
     """Page recognizing Aquaponics Champions."""
     return render_template("champions.html")
 
+
 @app.route("/aquaponics/about")
 def about():
     """Static About page."""
     return render_template("about.html")
+
 
 @app.route("/aquaponics/contact")
 def contact():
     """Static Contact page."""
     return render_template("contact.html")
 
+
 @app.route("/aquaponics/photos")
 def photos():
     """Photo gallery page."""
     return render_template("photos.html")
+
 
 @app.route("/aquaponics/stats")
 def stats_page():
@@ -234,6 +253,8 @@ def stats_page():
 # ---------------------------------------------------------------------------
 # STREAM PROXY ENDPOINT
 # ---------------------------------------------------------------------------
+
+
 @app.route("/aquaponics/relay_status")
 def relay_status():
     """Inspect current relay state (diagnostic)."""
@@ -248,6 +269,7 @@ def relay_status():
                 }
     return jsonify(data)
 
+
 @app.route("/aquaponics/stream_proxy")
 def stream_proxy():
     path = request.args.get("path", DEFAULT_STREAM_PATH_0)
@@ -257,7 +279,8 @@ def stream_proxy():
     logger.info(f"Proxy upstream={stream_url}")
     relay = get_media_relay(stream_url)
     client_queue = relay.add_client()
-    logger.info(f"Added client to relay {stream_url}; total_clients={len(relay.clients)}")
+    logger.info(
+        f"Added client to relay {stream_url}; total_clients={len(relay.clients)}")
 
     def generate():
         waited = 0.0
@@ -266,7 +289,8 @@ def stream_proxy():
             time.sleep(0.25)
             waited += 0.25
         if relay.last_frame is None:
-            logger.warning(f"No frame received from {stream_url} after {WARMUP_TIMEOUT}s; closing client.")
+            logger.warning(
+                f"No frame received from {stream_url} after {WARMUP_TIMEOUT}s; closing client.")
             relay.remove_client(client_queue)
             # Send minimal multipart boundary with text to avoid blank image tag
             yield b"--frame\r\nContent-Type: text/plain\r\n\r\nStream unavailable\r\n"
@@ -287,15 +311,19 @@ def stream_proxy():
                         yield chunk
                 except Exception as e:
                     consecutive_timeouts += 1
-                    logger.warning(f"Queue read exception ({e}) for {stream_url}; timeout #{consecutive_timeouts}")
+                    logger.warning(
+                        f"Queue read exception ({e}) for {stream_url}; timeout #{consecutive_timeouts}")
                     if consecutive_timeouts == 3:
-                        logger.warning(f"Timeouts x3 reading queue for {stream_url}")
+                        logger.warning(
+                            f"Timeouts x3 reading queue for {stream_url}")
                     if consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS or not relay.running:
-                        logger.error(f"Abandoning stream {stream_url}; consecutive_timeouts={consecutive_timeouts}")
+                        logger.error(
+                            f"Abandoning stream {stream_url}; consecutive_timeouts={consecutive_timeouts}")
                         break
         finally:
             relay.remove_client(client_queue)
-            logger.info(f"Client removed from {stream_url}; remaining={len(relay.clients)}")
+            logger.info(
+                f"Client removed from {stream_url}; remaining={len(relay.clients)}")
 
     return Response(
         generate(),
@@ -307,10 +335,12 @@ def stream_proxy():
         },
     )
 
+
 @app.route("/aquaponics/health")
 def health():
     """Simple health check used by monitoring or load balancers."""
     return {"status": "ok"}
+
 
 @app.route("/aquaponics/server_info")
 def server_info():
@@ -321,10 +351,13 @@ def server_info():
         "media_relays": list(_media_relays.keys()),
     }
 
+
 @app.route("/aquaponics/waitress_info")
 def waitress_info():
     """Runtime diagnostics focused on Waitress + streaming load."""
-    import threading, platform, sys
+    import threading
+    import platform
+    import sys
     all_threads = threading.enumerate()
     thread_names = [t.name for t in all_threads]
     waitress_threads = [n for n in thread_names if "waitress" in n.lower()]
@@ -353,10 +386,13 @@ def waitress_info():
 # ---------------------------------------------------------------------------
 # TEMPLATE CONTEXT
 # ---------------------------------------------------------------------------
+
+
 @app.context_processor
 def inject_urls():
     """Makes app_root available in all templates if needed for building links."""
     return dict(app_root=app.config["APPLICATION_ROOT"])
+
 
 @app.context_processor
 def inject_script_root():
@@ -366,6 +402,8 @@ def inject_script_root():
 # ---------------------------------------------------------------------------
 # CLEANUP LOGIC
 # ---------------------------------------------------------------------------
+
+
 def cleanup_relays():
     """Called at shutdown to stop all relay threads cleanly."""
     with _media_lock:
@@ -374,13 +412,15 @@ def cleanup_relays():
         _media_relays.clear()
     logger.info("Cached relays cleaned up")
 
+
 # ---------------------------------------------------------------------------
 # GEOIP DATABASE INITIALIZATION
 # ---------------------------------------------------------------------------
 try:
     import geoip2.database
-    GEOIP_DB_PATH = os.path.join(os.path.dirname(__file__), 'geoip', 'GeoLite2-City.mmdb')
-    
+    GEOIP_DB_PATH = os.path.join(os.path.dirname(
+        __file__), 'geoip', 'GeoLite2-City.mmdb')
+
     geo_reader = None
     if os.path.exists(GEOIP_DB_PATH):
         try:
@@ -392,7 +432,8 @@ try:
     else:
         logger.warning(f"GeoIP DB not found at {GEOIP_DB_PATH}")
 except ImportError:
-    logger.warning("geoip2 package not installed, geolocation features disabled")
+    logger.warning(
+        "geoip2 package not installed, geolocation features disabled")
     geo_reader = None
 
 # ---------------------------------------------------------------------------
@@ -404,9 +445,11 @@ if __name__ == "__main__":
     print("Development mode ONLY (use waitress_app.py in production).")
     app.run(host="127.0.0.1", port=5000, debug=False)
 
+
 @app.route("/")
 def root_redirect():
     return redirect("/aquaponics/")
+
 
 @app.route("/aquaponics")
 @app.route("/aquaponics/")
@@ -418,13 +461,15 @@ def index():
                            plants_stream_url=plants_stream_url,
                            timestamp=int(time.time()))
 
+
 @app.route("/aquaponics/stream_probe")
 def stream_probe():
     host = request.args.get("host", DEFAULT_STREAM_HOST)
     port = int(request.args.get("port", DEFAULT_STREAM_PORT))
     path = request.args.get("path", DEFAULT_STREAM_PATH_0)
     url = f"http://{host}:{port}{path}"
-    import requests, traceback
+    import requests
+    import traceback
     info = {"upstream_url": url}
     try:
         r = requests.get(url, timeout=5, stream=True)
@@ -439,6 +484,7 @@ def stream_probe():
         info["traceback"] = traceback.format_exc()
     return jsonify(info)
 
+
 @app.route("/aquaponics/relay_dump")
 def relay_dump():
     dump = {}
@@ -452,10 +498,11 @@ def relay_dump():
                 }
     return jsonify(dump)
 
-import logging
+
 for name in ("werkzeug", "flask.app"):
     logging.getLogger(name).setLevel(logging.INFO)
     logging.getLogger(name).propagate = True
+
 
 @app.before_request
 def track_visitor():
@@ -464,11 +511,13 @@ def track_visitor():
         ua = request.headers.get("User-Agent", "")[:250]
         now = datetime.utcnow()
 
-        v = VisitorLocation.query.filter_by(ip_address=ip).first()
+        # FIX: Query from the visitors database using bind_key
+        v = db.session.query(VisitorLocation).filter_by(ip_address=ip).first()
         if v:
             v.last_visit = now
             v.visit_count = (v.visit_count or 0) + 1
             v.user_agent = ua
+            logger.debug(f"Updated visitor: {ip}")
         else:
             v = VisitorLocation(
                 ip_address=ip,
@@ -478,7 +527,39 @@ def track_visitor():
                 user_agent=ua,
             )
             db.session.add(v)
+            logger.info(f"New visitor tracked: {ip}")
         db.session.commit()
     except Exception as e:
         db.session.rollback()
-        logger.warning(f"Visit not recorded: {e}")
+        logger.exception(f"Visit not recorded: {e}")  # Changed to exception for full traceback
+
+
+@app.route("/aquaponics/visitors")
+def visitors():
+    """Display visitor tracking information from the database."""
+    try:
+        # FIX: Query from the visitors database
+        all_visitors = db.session.query(VisitorLocation).order_by(
+            VisitorLocation.last_visit.desc()
+        ).all()
+        
+        # Get total visit count (sum of all visit_count fields)
+        total_visitors = db.session.query(
+            db.func.sum(VisitorLocation.visit_count)
+        ).scalar() or 0
+        
+        # Get unique visitor count
+        unique_visitors = db.session.query(VisitorLocation).count()
+        
+        logger.info(f"Visitors page accessed: {unique_visitors} unique, {total_visitors} total visits")
+        logger.info(f"Sample visitor data: {all_visitors[:3] if all_visitors else 'No visitors'}")
+        
+        return render_template(
+            "visitors.html",
+            visitors=all_visitors,
+            total_visitors=total_visitors,
+            unique_visitors=unique_visitors
+        )
+    except Exception as e:
+        logger.exception(f"Error loading visitors page: {e}")
+        return render_template("error.html", message="Could not load visitor data"), 500

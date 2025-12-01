@@ -12,6 +12,7 @@ class VisitorLocation(db.Model):
     Each instance represents one IP address and related geo-info (city, country, etc.)
     that we tracked visiting the site.
     """
+    __bind_key__ = 'visitors'  # Make sure this line exists
     __tablename__ = 'visitor_location'  # name of the table in the database
 
     # Primary key - unique identifier for each row
