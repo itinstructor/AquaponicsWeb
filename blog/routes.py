@@ -24,7 +24,6 @@ MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
 UPLOAD_FOLDER = os.path.join(os.path.dirname(
     os.path.dirname(__file__)), 'photos')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-PASSWORD_LENGTH = 12
 
 
 def login_required(f):
@@ -136,8 +135,8 @@ def register():
             return render_template('blog_register.html')
 
         # Password strength check
-        if len(password) < PASSWORD_LENGTH:
-            flash(f'Password must be at least {PASSWORD_LENGTH} characters long.', 'danger')
+        if len(password) < 16:
+            flash('Password must be at least 12 characters long.', 'danger')
             return render_template('blog_register.html')
 
         complexity_count = 0
@@ -757,8 +756,8 @@ def reset_password(user_id):
         return redirect(url_for('blog_bp.admin'))
 
     # Password strength check
-    if len(new_password) < PASSWORD_LENGTH:
-        flash(f'Password must be at least {PASSWORD_LENGTH} characters long.', 'danger')
+    if len(new_password) < 16:
+        flash('Password must be at least 16 characters long.', 'danger')
         return redirect(url_for('blog_bp.admin'))
 
     complexity_count = 0
@@ -819,8 +818,8 @@ def add_user():
         return redirect(url_for('blog_bp.admin'))
 
     # Password strength check
-    if len(password) < PASSWORD_LENGTH:
-        flash(f'Password must be at least {PASSWORD_LENGTH} characters long.', 'danger')
+    if len(password) < 16:
+        flash('Password must be at least 16 characters long.', 'danger')
         return redirect(url_for('blog_bp.admin'))
 
     complexity_count = 0
