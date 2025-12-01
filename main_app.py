@@ -272,10 +272,20 @@ def relay_status():
 
 @app.route("/aquaponics/stream_proxy")
 def stream_proxy():
+    # Get the path parameter from query string
     path = request.args.get("path", DEFAULT_STREAM_PATH_0)
+    
+    # FIX: Strip any query parameters from the path before forwarding to camera
+    # The browser adds ?t=timestamp for cache-busting, but camera doesn't understand it
+    if '?' in path:
+        path = path.split('?')[0]
+    
     host = DEFAULT_STREAM_HOST
     port = DEFAULT_STREAM_PORT
+    
+    # Build clean upstream URL without query parameters
     stream_url = f"http://{host}:{port}{path}"
+    
     logger.info(f"Proxy upstream={stream_url}")
     relay = get_media_relay(stream_url)
     client_queue = relay.add_client()
@@ -454,11 +464,26 @@ def root_redirect():
 @app.route("/aquaponics")
 @app.route("/aquaponics/")
 def index():
-    fish_stream_url = url_for("stream_proxy", path=DEFAULT_STREAM_PATH_0)
-    plants_stream_url = url_for("stream_proxy", path=DEFAULT_STREAM_PATH_1)
+    """Landing page for the Aquaponics monitoring system."""
+    logger.info("Index page accessed")
+    
+    # FIX: Swap these - stream0 is fish, stream1 is plants
+    fish_stream_url = url_for("stream_proxy", path=DEFAULT_STREAM_PATH_0, _external=False)
+    plants_stream_url = url_for("stream_proxy", path=DEFAULT_STREAM_PATH_1, _external=False)
+    
+    # Get latest blog posts
+    latest_posts = []
+    try:
+        from blog.models import BlogPost
+        latest_posts = BlogPost.query.order_by(BlogPost.created_at.desc()).limit(2).all()
+        logger.info(f"Loaded {len(latest_posts)} blog posts for index page")
+    except Exception as e:
+        logger.warning(f"Could not load blog posts: {e}")
+    
     return render_template("index.html",
                            fish_stream_url=fish_stream_url,
                            plants_stream_url=plants_stream_url,
+                           latest_posts=latest_posts,
                            timestamp=int(time.time()))
 
 
@@ -469,7 +494,6 @@ def stream_probe():
     path = request.args.get("path", DEFAULT_STREAM_PATH_0)
     url = f"http://{host}:{port}{path}"
     import requests
-    import traceback
     info = {"upstream_url": url}
     try:
         r = requests.get(url, timeout=5, stream=True)

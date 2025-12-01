@@ -11,9 +11,8 @@
   <div class="card mb-4">
     <div class="card-header">🐟 Fish Tank</div>
     <div class="card-body">
-
       <p class="mb-3">Live stream from the Aquaponics system fish tank in the Pit (Student common area).</p>
-      <img id="fishStream" src="{{ fish_stream_url }}" alt="Fish Tank Stream">
+      <img id="fishStream" src="{{ fish_stream_url }}?t={{ timestamp }}" alt="Fish Tank Stream" class="img-fluid">
     </div>
   </div>
 
@@ -40,12 +39,36 @@
   <div class="card mb-4">
     <div class="card-header">🌱 Plant Bed</div>
     <div class="card-body">
-
       <p class="mb-3">Live stream from the Aquaponics plant bed. See how the plants are growing with
         nutrients from the fish waste!</p>
-      <img id="plantsStream" src="{{ plants_stream_url }}" alt="Plant Bed Stream">
+      <img id="plantsStream" src="{{ plants_stream_url }}?t={{ timestamp }}" alt="Plant Bed Stream" class="img-fluid">
     </div>
   </div>
+
+  <!-- Latest Blog Posts -->
+  {% if latest_posts and latest_posts|length > 0 %}
+  <div class="card mb-4">
+    <div class="card-header">📝 Latest Blog Posts</div>
+    <div class="card-body">
+      {% for post in latest_posts[:2] %}
+      <div class="mb-4">
+        <h5 class="card-title">{{ post.title }}</h5>
+        <p class="small">
+          <i class="bi bi-person"></i> {{ post.author.username if post.author else 'Unknown' }}
+          <i class="bi bi-calendar ms-2"></i> {{ post.created_at.strftime('%B %d, %Y') }}
+        </p>
+        <p class="card-text mb-2">
+          {{ post.content|striptags|truncate(150, True, '...') }}
+        </p>
+        <a href="{{ url_for('blog_bp.view_post', slug=post.slug) }}" class="btn btn-primary">Read More →</a>
+      </div>
+      {% if not loop.last %}
+      <hr class="my-3">
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
 
   <!-- System Monitoring -->
   <div class="card mb-4">
