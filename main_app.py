@@ -592,3 +592,9 @@ def visitors():
     except Exception as e:
         logger.exception(f"Error loading visitors page: {e}")
         return render_template("error.html", message="Could not load visitor data"), 500
+
+
+@app.route("/aquaponics/videos")
+def videos_static():
+    """Static videos page."""
+    return render_template("videos_static.html")
