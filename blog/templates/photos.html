@@ -4,6 +4,8 @@
 
 {% block content %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/baguettebox.js/1.12.0/baguetteBox.min.css">
+<!-- NEW: gallery styles moved to blog static -->
+<link rel="stylesheet" href="{{ url_for('blog_bp.static', filename='css/blog.css') }}">
 
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -17,7 +19,7 @@
 
     {% if user %}
     <div class="alert alert-info mb-3">
-        <i class="bi bi-arrows-move"></i> Drag and drop photos to reorder them.
+        <i class="bi bi-arrows-move"></i> Drag photos using the ☰ handle to reorder them.
     </div>
     {% endif %}
 
@@ -35,20 +37,24 @@
     {% if photos %}
     <div class="row gallery" id="gallery">
         {% for photo in photos %}
-        <div class="col-md-4 col-sm-6 mb-4 photo-item" data-id="{{ photo.id }}" {% if user %}draggable="true"{% endif %}>
+        <div class="col-md-4 col-sm-6 mb-4 photo-item" data-id="{{ photo.id }}">
             <div class="card h-100">
+                {% if user %}
+                <!-- Hamburger drag handle (upper-left) -->
+                <div class="drag-handle" role="button" aria-label="Drag to reorder" title="Drag to reorder">
+                    <div class="drag-bars"><span></span></div>
+                </div>
+                {% endif %}
                 <a href="{{ url_for('blog_bp.serve_photo', filename=photo.filename) }}" data-caption="{{ photo.caption }}">
-                    <img src="{{ url_for('blog_bp.serve_photo', filename=photo.filename) }}" 
-                         class="card-img-top img-fluid" 
-                         alt="{{ photo.caption }}" 
-                         style="width: 100%; height: auto; object-fit: contain;">
+                    <img src="{{ url_for('blog_bp.serve_photo', filename=photo.filename) }}"
+                         class="card-img-top img-fluid"
+                         alt="{{ photo.caption }}">
                 </a>
                 <div class="card-body">
                     <p class="card-text">{{ photo.caption or 'No caption' }}</p>
                     {% if photo.description %}
                     <p class="card-text small text">{{ photo.description }}</p>
                     {% endif %}
-                    
                 </div>
                 {% if user %}
                 <div class="card-footer">
@@ -77,34 +83,34 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
 <script>
     baguetteBox.run('#gallery');
-    
+
     {% if user %}
-    // Enable drag-and-drop reordering for logged-in users
+    // Cross-browser Sortable with explicit handle
     const gallery = document.getElementById('gallery');
     if (gallery) {
         new Sortable(gallery, {
+            handle: '.drag-handle',
+            draggable: '.photo-item',
             animation: 150,
-            ghostClass: 'bg-light',
-            onEnd: function(evt) {
+            ghostClass: 'reordering-ghost',
+            forceFallback: true,
+            fallbackOnBody: true,
+            fallbackTolerance: 5,
+            filter: 'a, button, input, textarea, select',
+            preventOnFilter: false,
+            onEnd: function() {
                 const items = gallery.querySelectorAll('.photo-item');
-                const order = Array.from(items).map(item => parseInt(item.dataset.id));
-                
+                const order = Array.from(items).map(item => parseInt(item.dataset.id, 10));
                 fetch('{{ url_for("blog_bp.reorder_photos") }}', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ order: order })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ order })
                 })
-                .then(response => response.json())
+                .then(r => r.json())
                 .then(data => {
-                    if (data.success) {
-                        console.log('Photos reordered successfully');
-                    } else {
-                        console.error('Reorder failed:', data.error);
-                    }
+                    if (!data.success) console.error('Reorder failed:', data.error);
                 })
-                .catch(error => console.error('Error:', error));
+                .catch(err => console.error('Error:', err));
             }
         });
     }

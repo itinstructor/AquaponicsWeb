@@ -78,3 +78,69 @@ body.edit-post-page {
     max-width: 100%;
     height: auto;
 }
+
+/* Photos gallery styles */
+.photo-item .card {
+  position: relative; /* anchor for absolute handle */
+}
+
+/* Drag handle (hamburger) */
+.drag-handle {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid #d9d9d9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  z-index: 5;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.drag-handle:active { cursor: grabbing; }
+
+.drag-bars {
+  width: 18px;
+  height: 14px;
+  position: relative;
+}
+.drag-bars::before,
+.drag-bars::after,
+.drag-bars span {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #666;
+  border-radius: 1px;
+}
+.drag-bars::before { top: 0; }
+.drag-bars span    { top: 6px; }
+.drag-bars::after  { bottom: 0; }
+
+/* Ghost class during drag */
+.reordering-ghost {
+  opacity: 0.7;
+  border: 2px dashed #6c757d;
+}
+
+/* Prevent native image dragging interfering with DnD */
+.card-img-top {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+/* Full-size thumbnails */
+.photo-item .card-img-top {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
