@@ -92,33 +92,31 @@ class BlogImage(db.Model):
 
 class LoginAttempt(db.Model):
     """Model to log login attempts for security monitoring."""
-    __tablename__ = 'login_attempt'
+    __tablename__ = 'login_attempts'
     __bind_key__ = None  # Use the default database connection
     
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), nullable=False)
-    ip_address = db.Column(db.String(45), nullable=True)
     success = db.Column(db.Boolean, default=False)
-    reason = db.Column(db.String(200), nullable=True)
-    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    ip_address = db.Column(db.String(45))
+    user_agent = db.Column(db.String(255))  # ADD this column
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
-        return f'<LoginAttempt {self.username} @ {self.timestamp}>'
+        return f'<LoginAttempt {self.username} at {self.timestamp}>'
 
 
 class Photo(db.Model):
     """Model for gallery photos."""
-    __tablename__ = 'photo'
-    __bind_key__ = None  # Use the default database connection
+    __tablename__ = 'photos'
     
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False)
-    caption = db.Column(db.String(255), nullable=True)
-    description = db.Column(db.Text, nullable=True)
-    # Integer position for manual ordering in the gallery. Lower numbers display first.
-    position = db.Column(db.Integer, nullable=False, default=0, index=True)
-    upload_date = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    # Optionally, add a user_id if you want to track who uploaded
-
+    caption = db.Column(db.String(500), default='')
+    description = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    uploaded_by = db.Column(db.Integer, nullable=True)
+    sort_order = db.Column(db.Integer, default=0)  # ADD: For drag-and-drop reordering
+    
     def __repr__(self):
         return f'<Photo {self.filename}>'

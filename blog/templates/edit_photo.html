@@ -1,44 +1,42 @@
 {% extends "base.html" %}
 
+{% block title %}Edit Photo{% endblock %}
+
 {% block content %}
-<div class="container py-4">
-    <div class="card mb-4">
-        <div class="card-header">
-            <h3>Edit Photo Metadata</h3>
+<div class="container mt-4">
+    <h2>Edit Photo</h2>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    
+    <div class="row">
+        <div class="col-md-6">
+            <img src="{{ url_for('blog_bp.serve_photo', filename=photo.filename) }}" class="img-fluid mb-3 rounded" alt="{{ photo.caption }}">
         </div>
-        <div class="card-body">
+        <div class="col-md-6">
             <form method="post">
-                <div class="row">
-                    <div class="col-md-5 mb-3">
-                        <label class="form-label">Current Photo</label>
-                        <div class="card">
-                            <a href="{{ url_for('blog_bp.serve_photo', filename=photo.filename) }}" target="_blank">
-                                <img src="{{ url_for('blog_bp.serve_photo', filename=photo.filename) }}" alt="{{ photo.caption or 'Photo' }}" class="img-fluid">
-                            </a>
-                            <div class="card-body p-2">
-                                <small class="text-muted">{{ photo.filename }}</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-7">
-                        <div class="mb-3">
-                            <label for="caption" class="form-label">Caption</label>
-                            <input type="text" class="form-control" id="caption" name="caption" value="{{ photo.caption }}">
-                        </div>
-                        <div class="mb-3">
-                            <label for="description" class="form-label">Description</label>
-                            <textarea class="form-control" id="description" name="description" rows="3">{{ photo.description }}</textarea>
-                        </div>
-                    </div>
+                <div class="mb-3">
+                    <label for="caption" class="form-label">Caption</label>
+                    <input class="form-control" type="text" id="caption" name="caption" maxlength="500" value="{{ photo.caption or '' }}">
                 </div>
-                <div class="mt-3">
-                    <button type="submit" class="btn btn-primary">Save</button>
-                    <a href="{{ url_for('blog_bp.photos_gallery') }}" class="btn btn-secondary">Cancel</a>
-                    <form method="post" onsubmit="return confirm('Are you sure you want to delete this photo?');" style="display:inline;">
-                        <input type="hidden" name="delete" value="1">
-                        <button type="submit" class="btn btn-danger ms-2">Delete Photo</button>
-                    </form>
+                <div class="mb-3">
+                    <label for="description" class="form-label">Description</label>
+                    <textarea class="form-control" id="description" name="description" rows="4">{{ photo.description or '' }}</textarea>
                 </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-lg"></i> Save Changes
+                </button>
+                <a href="{{ url_for('blog_bp.photos') }}" class="btn btn-secondary">
+                    <i class="bi bi-x-lg"></i> Cancel
+                </a>
             </form>
         </div>
     </div>

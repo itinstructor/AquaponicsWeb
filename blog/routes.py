@@ -17,6 +17,7 @@ from functools import wraps
 import logging
 import os
 import secrets
+import time  # ADD: Import time module
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash
 
@@ -24,6 +25,14 @@ MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
 UPLOAD_FOLDER = os.path.join(os.path.dirname(
     os.path.dirname(__file__)), 'photos')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
+# ADD: Create logger at the top of the file
+logger = logging.getLogger(__name__)
+
+PHOTOS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'photos')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
+os.makedirs(PHOTOS_DIR, exist_ok=True)
 
 
 def login_required(f):
@@ -494,106 +503,160 @@ def all_posts():
         return redirect(url_for('blog_bp.dashboard'))
 
 
-@blog_bp.route('/photos/<path:filename>')
-def serve_photo(filename):
-    photos_dir = os.path.join(os.path.dirname(
-        os.path.dirname(__file__)), 'photos')
-    return send_from_directory(photos_dir, filename)
+def get_current_user():
+    """Get current logged-in user from session."""
+    user_id = session.get('user_id')
+    if user_id:
+        try:
+            return User.query.get(user_id)
+        except Exception:
+            return None
+    return None
 
 
-@blog_bp.route('/photos')
-def photos_gallery():
-    """Photo gallery page (blog version). Supports manual ordering via `position`."""
-    # Order first by position (manual), then filename as fallback
-    photos = Photo.query.order_by(Photo.position.asc(), Photo.filename).all()
-    # Build a list of dicts for template compatibility, including id, position, and description
-    photos_list = [
-        {
-            'id': p.id,
-            'filename': p.filename,
-            'caption': p.caption or '',
-            'description': p.description or '',
-            'position': p.position,
-        }
-        for p in photos
-    ]
-    return render_template('photos.html', photos=photos_list)
-
-
-@blog_bp.route('/videos')
-def videos():
-    """Videos listing page."""
-    # Example static list; can be replaced with DB-driven list later.
-    videos = [
-        {
-            'id': 'iYXiKHRuhz4',
-            'title': 'Pods In Space — Project Overview',
-            'description': 'Introductory video for the Pods In Space project.'
-        },
-    ]
-    return render_template('videos.html', videos=videos)
-
-
-@blog_bp.route('/photos/<int:photo_id>/edit', methods=['GET', 'POST'])
-@login_required
-def edit_photo(photo_id):
-    """Edit photo metadata (caption, description) and allow delete."""
-    photo = Photo.query.get_or_404(photo_id)
-    if request.method == 'POST':
-        if 'delete' in request.form:
-            # Delete photo file from ./photos and remove from DB
-            try:
-                photos_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'photos')
-                file_path = os.path.join(photos_dir, photo.filename)
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                db.session.delete(photo)
-                db.session.commit()
-                flash('Photo deleted successfully.', 'success')
-            except Exception as e:
-                db.session.rollback()
-                current_app.logger.error(f"Error deleting photo: {e}")
-                flash('Could not delete photo.', 'danger')
-            return redirect(url_for('blog_bp.photos_gallery'))
-        else:
-            caption = request.form.get('caption', '').strip()
-            description = request.form.get('description', '').strip()
-            photo.caption = caption
-            photo.description = description
-            try:
-                db.session.commit()
-                flash('Photo metadata updated.', 'success')
-            except Exception as e:
-                db.session.rollback()
-                current_app.logger.error(f"Error updating photo metadata: {e}")
-                flash('Could not update photo metadata.', 'danger')
-            return redirect(url_for('blog_bp.photos_gallery'))
-    return render_template('edit_photo.html', photo=photo)
-
-
-@blog_bp.route('/photos/reorder', methods=['POST'])
-@login_required
-def reorder_photos():
-    """Accept JSON payload with new order: {"order": [id1, id2, ...]} and update positions."""
-    data = request.get_json(silent=True)
-    if not data or 'order' not in data:
-        return jsonify({'error': 'Missing order data'}), 400
+@blog_bp.route("/photos")
+def photos():
+    """Display photo gallery."""
     try:
-        order = data['order']
-        # Validate it's a list of ints
-        if not isinstance(order, list):
-            raise ValueError('Order must be a list')
-        # Update positions in a transaction
-        for idx, pid in enumerate(order):
-            photo = Photo.query.get(pid)
-            if photo:
-                photo.position = idx
-        db.session.commit()
-        return jsonify({'status': 'ok'})
+        all_photos = Photo.query.order_by(Photo.sort_order.asc(), Photo.created_at.desc()).all()
+        logger.info(f"Loaded {len(all_photos)} photos")
     except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Error reordering photos: {e}")
-        return jsonify({'error': 'Could not save order'}), 500
+        logger.exception(f"Could not load photos: {e}")
+        all_photos = []
+    
+    user = get_current_user()
+    
+    return render_template("photos.html", photos=all_photos, user=user)
+
+
+@blog_bp.route("/photos/<path:filename>")
+def serve_photo(filename):
+    """Serve photo files."""
+    return send_from_directory(PHOTOS_DIR, filename)
+
+
+@blog_bp.route("/photos/upload", methods=["GET", "POST"])
+@login_required
+def upload_photo():
+    """Handle photo upload."""
+    user = get_current_user()
+    if not user:
+        flash("Please log in to upload photos", "error")
+        return redirect(url_for('blog_bp.login'))
+    
+    if request.method == "GET":
+        return render_template("blog_upload_photo.html")
+    
+    if 'photo' not in request.files:
+        flash("No file selected", "error")
+        return redirect(url_for('blog_bp.photos'))
+    
+    file = request.files['photo']
+    if file.filename == '':
+        flash("No file selected", "error")
+        return redirect(url_for('blog_bp.photos'))
+    
+    if file and allowed_file(file.filename):
+        try:
+            filename = secure_filename(file.filename)
+            base, ext = os.path.splitext(filename)
+            filename = f"{base}_{int(time.time())}{ext}"
+            
+            filepath = os.path.join(PHOTOS_DIR, filename)
+            file.save(filepath)
+            
+            caption = request.form.get('caption', '')
+            description = request.form.get('description', '')
+            
+            photo = Photo(
+                filename=filename,
+                caption=caption,
+                description=description,
+                uploaded_by=user.id
+            )
+            db.session.add(photo)
+            db.session.commit()
+            
+            logger.info(f"Photo uploaded: {filename}")
+            flash("Photo uploaded successfully!", "success")
+        except Exception as e:
+            logger.exception(f"Photo upload failed: {e}")
+            flash(f"Upload failed: {e}", "error")
+    else:
+        flash("Invalid file type. Allowed: PNG, JPG, JPEG, GIF, WEBP", "error")
+    
+    return redirect(url_for('blog_bp.photos'))
+
+
+@blog_bp.route("/photos/delete/<int:photo_id>", methods=["POST"])
+@login_required
+def delete_photo(photo_id):
+    """Delete a photo."""
+    user = get_current_user()
+    if not user:
+        flash("Please log in", "error")
+        return redirect(url_for('blog_bp.login'))
+    
+    try:
+        photo = Photo.query.get_or_404(photo_id)
+        filepath = os.path.join(PHOTOS_DIR, photo.filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        db.session.delete(photo)
+        db.session.commit()
+        flash("Photo deleted!", "success")
+    except Exception as e:
+        logger.exception(f"Delete failed: {e}")
+        flash(f"Delete failed: {e}", "error")
+    
+    return redirect(url_for('blog_bp.photos'))
+
+
+@blog_bp.route("/photos/edit/<int:photo_id>", methods=["GET", "POST"])
+def edit_photo(photo_id):
+    """Edit photo caption and description."""
+    user = get_current_user()
+    if not user:
+        flash("Please log in to edit photos", "error")
+        return redirect(url_for('blog_bp.login'))
+    
+    photo = Photo.query.get_or_404(photo_id)
+    
+    if request.method == "POST":
+        try:
+            photo.caption = request.form.get('caption', '')
+            photo.description = request.form.get('description', '')
+            db.session.commit()
+            
+            logger.info(f"Photo {photo_id} updated")
+            flash("Photo updated!", "success")
+            return redirect(url_for('blog_bp.photos'))
+        except Exception as e:
+            logger.exception(f"Photo update failed: {e}")
+            flash(f"Update failed: {e}", "error")
+    
+    return render_template("edit_photo.html", photo=photo, user=user)  # FIX: Use correct template name
+
+
+@blog_bp.route("/photos/reorder", methods=["POST"])
+def reorder_photos():
+    """Reorder photos via drag and drop."""
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+    
+    try:
+        order = request.json.get('order', [])
+        for index, photo_id in enumerate(order):
+            photo = Photo.query.get(photo_id)
+            if photo:
+                photo.sort_order = index
+        db.session.commit()
+        logger.info(f"Photos reordered: {order}")
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.exception(f"Reorder failed: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @blog_bp.route('/admin')
@@ -865,33 +928,3 @@ def add_user():
         flash('An error occurred while creating the user.', 'danger')
     return redirect(url_for('blog_bp.admin'))
 
-
-@blog_bp.route('/photos/upload', methods=['GET', 'POST'])
-@login_required
-def upload_photo():
-    """Upload a new photo (only for logged-in users)."""
-    if 'user_id' not in session:
-        flash('Please log in to upload photos.', 'warning')
-        return redirect(url_for('blog_bp.login'))
-    if request.method == 'POST':
-        file = request.files.get('photo')
-        caption = request.form.get('caption', '').strip()
-        description = request.form.get('description', '').strip()
-        if not file or file.filename == '':
-            flash('No file selected.', 'danger')
-            return redirect(request.url)
-        if not allowed_file(file.filename):
-            flash('Invalid file type.', 'danger')
-            return redirect(request.url)
-        filename = secure_filename(file.filename)
-        photos_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'photos')
-        os.makedirs(photos_dir, exist_ok=True)
-        save_path = os.path.join(photos_dir, filename)
-        file.save(save_path)
-        # Save metadata to DB
-        photo = Photo(filename=filename, caption=caption, description=description)
-        db.session.add(photo)
-        db.session.commit()
-        flash('Photo uploaded successfully!', 'success')
-        return redirect(url_for('blog_bp.photos_gallery'))
-    return render_template('blog_upload_photo.html')
