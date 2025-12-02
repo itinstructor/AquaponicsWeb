@@ -101,6 +101,11 @@ app = Flask(
 )
 app.config['APPLICATION_ROOT'] = '/aquaponics'
 
+# ADD: Initialize Turnstile protection
+from turnstile import init_turnstile
+init_turnstile(app)
+logger.info("Turnstile initialization attempted")
+
 # Secret key (load or generate)
 SECRET_FILE = os.path.join(BASE_DIR, 'secret.key')
 if os.path.exists(SECRET_FILE):
