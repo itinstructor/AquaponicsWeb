@@ -35,6 +35,7 @@ from flask import Flask, render_template, request, url_for, Response, redirect, 
 from datetime import datetime
 import os
 from logging_config import setup_logging, get_logger
+from blacklist_checker import blacklist_checker
 
 setup_logging("main_app.log")
 logger = get_logger("main_app")
@@ -598,3 +599,81 @@ def visitors():
 def videos_static():
     """Static videos page."""
     return render_template("videos_static.html")
+
+
+def get_real_client_ip():
+    """Get the real client IP address, accounting for proxies."""
+    from flask import request
+    
+    # Check X-Forwarded-For header (set by IIS/reverse proxies)
+    x_forwarded_for = request.headers.get('X-Forwarded-For')
+    if x_forwarded_for:
+        # X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
+        # The first one is the real client IP
+        client_ip = x_forwarded_for.split(',')[0].strip()
+        return client_ip
+    
+    # Fallback to other headers
+    if request.headers.get('X-Real-IP'):
+        return request.headers.get('X-Real-IP')
+    
+    # Last resort: use remote_addr (will be 127.0.0.1 behind proxy)
+    return request.remote_addr
+
+@app.before_request
+def check_ip_blacklist():
+    """Block requests from blacklisted IPs."""
+    from flask import request, abort
+    
+    # Skip for static files
+    if request.path.startswith('/aquaponics/static'):
+        return
+    
+    # Get real client IP (accounting for proxy)
+    client_ip = get_real_client_ip()
+    
+    # Skip localhost/private IPs
+    if client_ip in ['127.0.0.1', '::1', 'localhost'] or client_ip.startswith('10.') or client_ip.startswith('192.168.'):
+        return
+    
+    # Check if IP is blacklisted
+    is_blocked, source, confidence = blacklist_checker.is_blacklisted(client_ip)
+    
+    if is_blocked:
+        logger.warning(f"BLOCKED request from blacklisted IP: {client_ip} (source: {source}, confidence: {confidence}%)")
+        abort(403)  # Forbidden
+
+
+@app.route("/aquaponics/admin/blacklist")
+def admin_blacklist():
+    """View blacklist cache (admin only)."""
+    from flask import session, jsonify
+    
+    # Simple check - only allow if logged in as admin
+    if session.get('user_id') != 1:  # Adjust based on your admin user ID
+        return "Unauthorized", 403
+    
+    cache_data = []
+    for ip, (result, cached_time) in blacklist_checker.cache.items():
+        is_blocked, source, confidence = result
+        cache_data.append({
+            'ip': ip,
+            'blocked': is_blocked,
+            'source': source,
+            'confidence': confidence,
+            'cached_at': cached_time.isoformat()
+        })
+    
+    return jsonify(cache_data)
+
+@app.route("/aquaponics/admin/blacklist/clear", methods=["POST"])
+def admin_clear_blacklist():
+    """Clear blacklist cache (admin only)."""
+    from flask import session
+    
+    if session.get('user_id') != 1:
+        return "Unauthorized", 403
+    
+    blacklist_checker.clear_cache()
+    logger.info("Blacklist cache cleared by admin")
+    return "Cache cleared", 200

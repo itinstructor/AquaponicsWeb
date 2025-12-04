@@ -24,13 +24,20 @@ def validate_password(password):
 
 
 def get_client_ip():
-    """Get client IP from request headers (respects proxies)."""
-    hdr = request.headers.get
-    for h in ("X-Real-Ip", "X-Real-IP", "X-Forwarded-For", "X-MS-Forwarded-Client-IP"):
-        v = hdr(h)
-        if v:
-            return v.split(",")[0].strip()
-    return request.environ.get("REMOTE_ADDR") or request.remote_addr
+    """Get the real client IP address."""
+    from flask import request
+    
+    # Check X-Forwarded-For header (set by IIS/reverse proxies)
+    x_forwarded_for = request.headers.get('X-Forwarded-For')
+    if x_forwarded_for:
+        client_ip = x_forwarded_for.split(',')[0].strip()
+        return client_ip
+    
+    # Fallback to other headers
+    if request.headers.get('X-Real-IP'):
+        return request.headers.get('X-Real-IP')
+    
+    return request.remote_addr
 
 
 def log_login_attempt(username, success, user_agent=None):
