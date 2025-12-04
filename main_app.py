@@ -21,7 +21,6 @@ from fish_cam_config import (
     DEFAULT_STREAM_PATH_0,
     DEFAULT_STREAM_PATH_1,
 )
-from turnstile import init_turnstile
 from geomap_module.routes import VISITOR_COOLDOWN_HOURS
 from geomap_module.helpers import get_ip, get_location
 from geomap_module.models import VisitorLocation
@@ -32,10 +31,9 @@ from dotenv import load_dotenv
 import time
 import threading
 from flask import Flask, render_template, request, url_for, Response, redirect, session, jsonify
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 from logging_config import setup_logging, get_logger
-from blacklist_checker import blacklist_checker
 
 setup_logging("main_app.log")
 logger = get_logger("main_app")
@@ -71,12 +69,6 @@ def get_media_relay(url):
             relay.start()
         return relay
 
-
-# Database and visitor tracking
-
-# Turnstile bot protection
-
-
 # Apply environment overrides if present
 ENV_HOST = os.getenv("CAMERA_HOST")
 ENV_PORT = os.getenv("CAMERA_PORT")
@@ -102,12 +94,13 @@ app = Flask(
 )
 app.config['APPLICATION_ROOT'] = '/aquaponics'
 
-# ADD: Initialize Turnstile protection
-from turnstile import init_turnstile
-init_turnstile(app)
-logger.info("Turnstile initialization attempted")
+# Configure session for Turnstile persistence
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=1)
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True if using HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
-# Secret key (load or generate)
+# SECRET KEY MUST BE SET BEFORE INIT_TURNSTILE (because sessions won't work without it)
 SECRET_FILE = os.path.join(BASE_DIR, 'secret.key')
 if os.path.exists(SECRET_FILE):
     with open(SECRET_FILE, 'rb') as f:
@@ -119,6 +112,11 @@ else:
             f.write(app.secret_key)
     except Exception:
         logger.warning("Could not persist generated secret key")
+
+# NOW import and initialize Turnstile (after secret_key is set and after load_dotenv)
+from turnstile import init_turnstile
+init_turnstile(app)
+logger.info("Turnstile initialization attempted")
 
 # Database configuration (adjust if you use a different URI)
 INSTANCE_DIR = r"c:/inetpub/aquaponics/instance"
@@ -197,28 +195,44 @@ def handle_404(err):
 
 
 # ---------------------------------------------------------------------------
-# CONTENT SECURITY POLICY FOR THINGSPEAK IFRAMES
+# CONTENT SECURITY POLICY FOR THINGSPEAK IFRAMES & TURNSTILE
 # ---------------------------------------------------------------------------
 # optional for private channel
 THINGSPEAK_READ_KEY = os.getenv("THINGSPEAK_READ_KEY")
 
 
 @app.after_request
-def allow_thingspeak(response):
+def set_security_headers(response):
+    """Set Content Security Policy and other security headers."""
     path = request.path.rstrip('/')
+    
+    # Base CSP that allows Cloudflare Turnstile globally
+    base_csp = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
+        "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
+        "style-src-elem 'self' 'unsafe-inline' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
+        "img-src 'self' data: https://challenges.cloudflare.com; "
+        "frame-src 'self' https://challenges.cloudflare.com; "
+        "connect-src 'self' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
+        "font-src 'self' data: https://cdn.jsdelivr.net;"
+    )
+    
     if path == '/aquaponics/sensors':
+        # Additional domains for sensor page
         response.headers['Content-Security-Policy'] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://thingspeak.com https://thingspeak.mathworks.com https://cdn.jsdelivr.net; "
-            "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://thingspeak.com https://thingspeak.mathworks.com https://cdn.jsdelivr.net; "
-            "style-src 'self' 'unsafe-inline' https://thingspeak.com https://thingspeak.mathworks.com https://cdn.jsdelivr.net; "
-            "style-src-elem 'self' 'unsafe-inline' https://thingspeak.com https://thingspeak.mathworks.com https://cdn.jsdelivr.net; "
-            "img-src 'self' data: https://thingspeak.com https://thingspeak.mathworks.com; "
+            base_csp +
+            "script-src-elem 'unsafe-inline' https://thingspeak.com https://thingspeak.mathworks.com; "
+            "style-src 'unsafe-inline' https://thingspeak.com https://thingspeak.mathworks.com; "
+            "img-src https://thingspeak.com https://thingspeak.mathworks.com; "
             "frame-src https://thingspeak.com https://thingspeak.mathworks.com; "
-            "connect-src 'self' https://thingspeak.com https://thingspeak.mathworks.com https://api.thingspeak.com https://cdn.jsdelivr.net; "
-            "font-src 'self' data: https://cdn.jsdelivr.net;"
+            "connect-src https://thingspeak.com https://api.thingspeak.com;"
         )
         response.headers.pop('X-Frame-Options', None)
+    else:
+        response.headers['Content-Security-Policy'] = base_csp
+    
     return response
 
 
@@ -599,81 +613,3 @@ def visitors():
 def videos_static():
     """Static videos page."""
     return render_template("videos_static.html")
-
-
-def get_real_client_ip():
-    """Get the real client IP address, accounting for proxies."""
-    from flask import request
-    
-    # Check X-Forwarded-For header (set by IIS/reverse proxies)
-    x_forwarded_for = request.headers.get('X-Forwarded-For')
-    if x_forwarded_for:
-        # X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
-        # The first one is the real client IP
-        client_ip = x_forwarded_for.split(',')[0].strip()
-        return client_ip
-    
-    # Fallback to other headers
-    if request.headers.get('X-Real-IP'):
-        return request.headers.get('X-Real-IP')
-    
-    # Last resort: use remote_addr (will be 127.0.0.1 behind proxy)
-    return request.remote_addr
-
-@app.before_request
-def check_ip_blacklist():
-    """Block requests from blacklisted IPs."""
-    from flask import request, abort
-    
-    # Skip for static files
-    if request.path.startswith('/aquaponics/static'):
-        return
-    
-    # Get real client IP (accounting for proxy)
-    client_ip = get_real_client_ip()
-    
-    # Skip localhost/private IPs
-    if client_ip in ['127.0.0.1', '::1', 'localhost'] or client_ip.startswith('10.') or client_ip.startswith('192.168.'):
-        return
-    
-    # Check if IP is blacklisted
-    is_blocked, source, confidence = blacklist_checker.is_blacklisted(client_ip)
-    
-    if is_blocked:
-        logger.warning(f"BLOCKED request from blacklisted IP: {client_ip} (source: {source}, confidence: {confidence}%)")
-        abort(403)  # Forbidden
-
-
-@app.route("/aquaponics/admin/blacklist")
-def admin_blacklist():
-    """View blacklist cache (admin only)."""
-    from flask import session, jsonify
-    
-    # Simple check - only allow if logged in as admin
-    if session.get('user_id') != 1:  # Adjust based on your admin user ID
-        return "Unauthorized", 403
-    
-    cache_data = []
-    for ip, (result, cached_time) in blacklist_checker.cache.items():
-        is_blocked, source, confidence = result
-        cache_data.append({
-            'ip': ip,
-            'blocked': is_blocked,
-            'source': source,
-            'confidence': confidence,
-            'cached_at': cached_time.isoformat()
-        })
-    
-    return jsonify(cache_data)
-
-@app.route("/aquaponics/admin/blacklist/clear", methods=["POST"])
-def admin_clear_blacklist():
-    """Clear blacklist cache (admin only)."""
-    from flask import session
-    
-    if session.get('user_id') != 1:
-        return "Unauthorized", 403
-    
-    blacklist_checker.clear_cache()
-    logger.info("Blacklist cache cleared by admin")
-    return "Cache cleared", 200

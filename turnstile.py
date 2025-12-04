@@ -1,30 +1,5 @@
 """
 Cloudflare Turnstile integration for bot protection.
-
-This module provides site-wide Turnstile verification with session-based caching
-to avoid re-challenging verified users on every request.
-
-Features:
-- Automatic verification for all non-static routes
-- Session-based verification caching (verified users aren't re-challenged)
-- Configurable TTL for verification sessions
-- Challenge page with auto-redirect after verification
-
-Setup:
-1. Get your Turnstile site key and secret key from Cloudflare dashboard
-2. Add keys to .env file in project root:
-   TURNSTILE_SITE_KEY=your-site-key
-   TURNSTILE_SECRET=your-secret-key
-   TURNSTILE_VERIFY_TTL=86400
-3. Keys are automatically loaded from .env file
-
-Usage:
-    from turnstile import init_turnstile
-    
-    # Initialize in your Flask app
-    init_turnstile(app)
-    
-    # Middleware automatically protects all routes
 """
 import os
 import time
@@ -35,15 +10,8 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# Load environment variables from .env file
-try:
-    from dotenv import load_dotenv
-    env_path = os.path.join(os.path.dirname(__file__), '.env')
-    if os.path.exists(env_path):
-        load_dotenv(env_path)
-        logger.info(f"Turnstile: Loaded environment from {env_path}")
-except ImportError:
-    logger.warning("python-dotenv not installed. Using environment variables only.")
+# Note: Environment variables should be loaded by main_app.py before importing this module
+# No need to call load_dotenv here - rely on os.environ being populated
 
 # Configuration from environment - support both naming conventions
 TURNSTILE_SITE_KEY = (
@@ -236,11 +204,18 @@ def validate_turnstile(token: str, remoteip: Optional[str] = None) -> Dict:
 
 def is_turnstile_verified() -> bool:
     """Check if current session has a valid Turnstile verification."""
-    if not TURNSTILE_ENABLED:
+    # Check dynamically, not using module constant
+    site_key = os.environ.get("TURNSTILE_SITE_KEY") or os.environ.get("TURNSTILE_SITEKEY")
+    secret = os.environ.get("TURNSTILE_SECRET") or os.environ.get("TURNSTILE_SECRET_KEY")
+    
+    if not (site_key and secret):
+        logger.warning("Turnstile: Not configured (missing keys), allowing all")
         return True  # If Turnstile not configured, allow all
     
     verified_at = session.get(SESSION_VERIFIED_KEY)
+    
     if not verified_at:
+        logger.info("Turnstile: No verification in session, challenge needed")
         return False
     
     # Check if verification has expired
@@ -276,21 +251,31 @@ def init_turnstile(app):
     Initialize Turnstile protection for the Flask app.
     Adds middleware to check verification on all requests.
     """
-    if not TURNSTILE_ENABLED:
+    # Check dynamically, not using module constant
+    site_key = os.environ.get("TURNSTILE_SITE_KEY") or os.environ.get("TURNSTILE_SITEKEY")
+    secret = os.environ.get("TURNSTILE_SECRET") or os.environ.get("TURNSTILE_SECRET_KEY")
+    
+    if not (site_key and secret):
         logger.warning("⚠️ Turnstile NOT enabled (missing TURNSTILE_SITE_KEY or TURNSTILE_SECRET)")
         return
     
-    logger.info(f"✓ Turnstile enabled with site key: {TURNSTILE_SITE_KEY[:10]}... (TTL: {TURNSTILE_VERIFY_TTL}s)")
+    logger.info(f"✓ Turnstile enabled with site key: {site_key[:10]}... (TTL: {TURNSTILE_VERIFY_TTL}s)")
     
     # Get the application root for proper URL construction
-    app_root = app.config.get('APPLICATION_ROOT', '').rstrip('/')
+    app_root = app.config.get('APPLICATION_ROOT', '/aquaponics')
+    
+    # Register routes with explicit paths (not f-strings in decorators)
+    turnstile_verify_path = app_root + "/turnstile/verify"
+    turnstile_challenge_path = app_root + "/turnstile/challenge"
+    
+    logger.info(f"Registering Turnstile routes: {turnstile_verify_path}, {turnstile_challenge_path}")
     
     # Add verification endpoint
-    @app.route(f"{app_root}/turnstile/verify", methods=["POST"])
+    @app.route(turnstile_verify_path, methods=["POST"])
     def turnstile_verify():
         """Process Turnstile verification and redirect back."""
         token = request.form.get("cf-turnstile-response")
-        next_url = request.form.get("next", f"{app_root}/")
+        next_url = request.form.get("next", app_root + "/")
         client_ip = get_client_ip()
         
         logger.info(f"Turnstile verify POST from {client_ip}, token={'present' if token else 'MISSING'}")
@@ -299,29 +284,30 @@ def init_turnstile(app):
         
         if validation.get("success"):
             mark_turnstile_verified()
-            logger.info(f"Redirecting verified user to: {next_url}")
+            logger.info(f"Turnstile: Verified user redirecting to {next_url}")
             return redirect(next_url)
         else:
             errors = validation.get("error-codes", [])
-            logger.warning(f"Showing challenge again due to errors: {errors}")
-            # Show challenge again with error
+            logger.warning(f"Turnstile: Challenge failed, showing again. Errors: {errors}")
+            # Show challenge again with error - use dynamic site_key
             return render_template_string(
                 CHALLENGE_PAGE,
-                site_key=TURNSTILE_SITE_KEY,
+                site_key=site_key,
                 verify_url=url_for("turnstile_verify"),
                 next_url=next_url,
                 error=True
             )
     
     # Add challenge page endpoint
-    @app.route(f"{app_root}/turnstile/challenge")
+    @app.route(turnstile_challenge_path)
     def turnstile_challenge():
         """Show the Turnstile challenge page."""
-        next_url = request.args.get("next", f"{app_root}/")
-        logger.info(f"Showing Turnstile challenge, next={next_url}")
+        next_url = request.args.get("next", app_root + "/")
+        logger.info(f"Turnstile: Showing challenge page, next={next_url}")
+        # Use dynamic site_key
         return render_template_string(
             CHALLENGE_PAGE,
-            site_key=TURNSTILE_SITE_KEY,
+            site_key=site_key,
             verify_url=url_for("turnstile_verify"),
             next_url=next_url,
             error=False
@@ -334,30 +320,34 @@ def init_turnstile(app):
         Middleware to verify Turnstile for all requests.
         Skips static files, health checks, and Turnstile endpoints.
         """
-        if not TURNSTILE_ENABLED:
+        try:
+            path = request.path or ""
+            logger.info(f"Turnstile middleware: checking path={path}")
+            
+            # Skip verification for these paths
+            skip_paths = [
+                app_root + "/turnstile/",
+                app_root + "/static/",
+                app_root + "/health",
+                app_root + "/server_info",
+                app_root + "/waitress_info",
+            ]
+            
+            if any(path.startswith(p) for p in skip_paths):
+                return
+            
+            # Check if already verified
+            if is_turnstile_verified():
+                logger.info("Turnstile: Session already verified")
+                return
+            
+            # Not verified - redirect to challenge page
+            logger.info(f"Turnstile: Challenge required for {path} from {get_client_ip()}")
+            return redirect(url_for("turnstile_challenge", next=request.url))
+            
+        except Exception as e:
+            logger.exception(f"Turnstile middleware error: {e}")
+            # On error, allow the request to proceed
             return
-        
-        path = request.path or ""
-        
-        # Skip verification for these paths
-        app_root = app.config.get('APPLICATION_ROOT', '').rstrip('/')
-        skip_paths = [
-            f"{app_root}/turnstile/",
-            f"{app_root}/static/",
-            f"{app_root}/health",
-            f"{app_root}/server_info",
-            f"{app_root}/waitress_info",
-        ]
-        
-        if any(path.startswith(p) for p in skip_paths):
-            return
-        
-        # Check if already verified
-        if is_turnstile_verified():
-            return
-        
-        # Not verified - redirect to challenge page
-        logger.info(f"Turnstile verification required for {get_client_ip()} accessing {path}")
-        return redirect(url_for("turnstile_challenge", next=request.url))
     
-    logger.info("Turnstile middleware registered")
+    logger.info("Turnstile middleware registered successfully")
