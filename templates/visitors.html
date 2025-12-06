@@ -173,53 +173,53 @@
             const tbody = document.getElementById('recent-visitors-body');
             tbody.innerHTML = '';
 
-            if (stats.recent_visitors.length === 0) {
+            if (!stats.recent_visitors || stats.recent_visitors.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="3" class="text-center">No recent visitors yet</td></tr>';
-                return;
+            } else {
+                stats.recent_visitors.forEach(visitor => {
+                    const row = document.createElement('tr');
+                    const location = `${visitor.city || 'Unknown'}, ${visitor.region || ''} ${visitor.country || ''}`.trim();
+                    const time = visitor.last_visit || 'N/A';
+                    const visitBadge = visitor.visit_count > 1
+                        ? `<span class="badge bg-primary">${visitor.visit_count}</span>`
+                        : visitor.visit_count;
+
+                    row.innerHTML = `
+                        <td>${location}</td>
+                        <td class="text-center">${visitBadge}</td>
+                        <td>${time}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
             }
-
-            stats.recent_visitors.forEach(visitor => {
-                const row = document.createElement('tr');
-                const location = `${visitor.city || 'Unknown'}, ${visitor.region || ''} ${visitor.country || ''}`.trim();
-                const time = new Date(visitor.last_visit).toLocaleString();
-                const visitBadge = visitor.visit_count > 1
-                    ? `<span class="badge bg-primary">${visitor.visit_count}</span>`
-                    : visitor.visit_count;
-
-                row.innerHTML = `
-                    <td>${location}</td>
-                    <td class="text-center">${visitBadge}</td>
-                    <td>${time}</td>
-                `;
-                tbody.appendChild(row);
-            });
 
             // Update top visitors table
             const topTbody = document.getElementById('top-visitors-body');
             topTbody.innerHTML = '';
 
-            if (stats.top_visitors && stats.top_visitors.length === 0) {
+            if (!stats.top_visitors || stats.top_visitors.length === 0) {
                 topTbody.innerHTML = '<tr><td colspan="3" class="text-center">No visitors yet</td></tr>';
-                return;
+            } else {
+                stats.top_visitors.forEach((visitor, index) => {
+                    const row = document.createElement('tr');
+                    const location = `${visitor.city || 'Unknown'}, ${visitor.region || ''} ${visitor.country || ''}`.trim();
+                    const rank = index + 1;
+                    const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
+                    const visitBadge = `<span class="badge bg-success">${visitor.visit_count}</span>`;
+
+                    row.innerHTML = `
+                        <td class="text-center">${medal}</td>
+                        <td>${location}</td>
+                        <td class="text-center">${visitBadge}</td>
+                    `;
+                    topTbody.appendChild(row);
+                });
             }
-
-            stats.top_visitors.forEach((visitor, index) => {
-                const row = document.createElement('tr');
-                const location = `${visitor.city || 'Unknown'}, ${visitor.region || ''} ${visitor.country || ''}`.trim();
-                const rank = index + 1;
-                const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
-                const visitBadge = `<span class="badge bg-success">${visitor.visit_count}</span>`;
-
-                row.innerHTML = `
-                    <td class="text-center">${medal}</td>
-                    <td>${location}</td>
-                    <td class="text-center">${visitBadge}</td>
-                `;
-                topTbody.appendChild(row);
-            });
         })
         .catch(error => {
             console.error('Error fetching visitor stats:', error);
+            document.getElementById('recent-visitors-body').innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error loading data</td></tr>';
+            document.getElementById('top-visitors-body').innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error loading data</td></tr>';
         });
 
     // Auto-refresh stats every 30 seconds

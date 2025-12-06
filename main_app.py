@@ -213,11 +213,11 @@ def set_security_headers(response):
     # Base CSP that allows Cloudflare Turnstile globally
     base_csp = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
-        "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
-        "style-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
-        "style-src-elem 'self' 'unsafe-inline' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
-        "img-src 'self' data: https://challenges.cloudflare.com https://img.youtube.com; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; "
+        "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; "
+        "style-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; "
+        "style-src-elem 'self' 'unsafe-inline' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; "
+        "img-src 'self' data: https://challenges.cloudflare.com https://img.youtube.com https://unpkg.com https://*.tile.openstreetmap.org; "
         "frame-src 'self' https://challenges.cloudflare.com; "
         "connect-src 'self' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
         "font-src 'self' data: https://cdn.jsdelivr.net;"
