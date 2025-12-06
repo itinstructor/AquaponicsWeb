@@ -15,6 +15,8 @@ Does NOT include extra debug endpoints or complex UI logic.
 """
 
 import logging
+import requests
+from urllib.parse import unquote, parse_qsl
 from fish_cam_config import (
     DEFAULT_STREAM_HOST as CAM_HOST,
     DEFAULT_STREAM_PORT as CAM_PORT,
@@ -204,30 +206,35 @@ THINGSPEAK_READ_KEY = os.getenv("THINGSPEAK_READ_KEY")
 @app.after_request
 def set_security_headers(response):
     """Set Content Security Policy and other security headers."""
+    response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+    response.headers['Cross-Origin-Embedder-Policy'] = 'unsafe-none'
     path = request.path.rstrip('/')
     
     # Base CSP that allows Cloudflare Turnstile globally
     base_csp = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
-        "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
-        "style-src-elem 'self' 'unsafe-inline' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
-        "img-src 'self' data: https://challenges.cloudflare.com; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "style-src-elem 'self' 'unsafe-inline' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "img-src 'self' data: https://challenges.cloudflare.com https://img.youtube.com; "
         "frame-src 'self' https://challenges.cloudflare.com; "
         "connect-src 'self' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
         "font-src 'self' data: https://cdn.jsdelivr.net;"
     )
     
     if path == '/aquaponics/sensors':
-        # Additional domains for sensor page
+        # Sensor page CSP - allow ThingSpeak images and content
         response.headers['Content-Security-Policy'] = (
-            base_csp +
-            "script-src-elem 'unsafe-inline' https://thingspeak.com https://thingspeak.mathworks.com; "
-            "style-src 'unsafe-inline' https://thingspeak.com https://thingspeak.mathworks.com; "
-            "img-src https://thingspeak.com https://thingspeak.mathworks.com; "
-            "frame-src https://thingspeak.com https://thingspeak.mathworks.com; "
-            "connect-src https://thingspeak.com https://api.thingspeak.com;"
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
+            "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
+            "style-src-elem 'self' 'unsafe-inline' https://challenges.cloudflare.com https://cdn.jsdelivr.net; "
+            "img-src 'self' data: https://challenges.cloudflare.com https://thingspeak.com https://*.thingspeak.com https://mathworks.com https://*.mathworks.com; "
+            "frame-src 'self' https://challenges.cloudflare.com https://thingspeak.com https://*.thingspeak.com https://mathworks.com https://*.mathworks.com; "
+            "connect-src 'self' https://challenges.cloudflare.com https://cdn.jsdelivr.net https://thingspeak.com https://*.thingspeak.com https://api.thingspeak.com https://mathworks.com https://*.mathworks.com; "
+            "font-src 'self' data: https://cdn.jsdelivr.net;"
         )
         response.headers.pop('X-Frame-Options', None)
     else:
@@ -239,6 +246,93 @@ def set_security_headers(response):
 @app.route("/aquaponics/sensors")
 def sensors():
     return render_template("sensors.html", ts_read_key=THINGSPEAK_READ_KEY)
+
+
+@app.route("/aquaponics/thingspeak_proxy")
+def thingspeak_proxy():
+    """Proxy Thingspeak resources to avoid CORP blocks."""
+    path = request.args.get("path")
+    client_ip = request.remote_addr or request.environ.get("REMOTE_ADDR")
+    logger.info("Thingspeak proxy request from %s path=%s", client_ip, path)
+
+    if not path:
+        logger.warning("Thingspeak proxy missing 'path' from %s", client_ip)
+        return ("Missing 'path' parameter", 400)
+    if ".." in path or path.startswith("//"):
+        logger.warning("Thingspeak proxy invalid path from %s: %s", client_ip, path)
+        return ("Invalid path", 400)
+
+    decoded = unquote(path)
+    if "?" in decoded:
+        path_part, query_str = decoded.split("?", 1)
+        params = dict(parse_qsl(query_str, keep_blank_values=True))
+    else:
+        path_part = decoded
+        params = None
+
+    if path_part.startswith("/"):
+        url = f"https://thingspeak.com{path_part}"
+    else:
+        url = f"https://thingspeak.com/{path_part}"
+
+    logger.info("Thingspeak proxy forwarding to %s params=%s (client=%s)", url, params, client_ip)
+    try:
+        start = time.time()
+        resp = requests.get(url, params=params, timeout=15)
+        elapsed = time.time() - start
+        logger.info(
+            "Thingspeak responded %s bytes=%d in %.3fs for client %s",
+            resp.status_code,
+            len(resp.content or b""),
+            elapsed,
+            client_ip,
+        )
+    except Exception:
+        logger.exception("Thingspeak proxy request failed for url=%s (client=%s)", url, client_ip)
+        return ("Upstream request failed", 502)
+
+    # Headers to exclude (blocking headers)
+    excluded = {
+        "content-encoding",
+        "transfer-encoding",
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailers",
+        "upgrade",
+        "x-frame-options",
+        "content-security-policy",
+    }
+
+    response = Response(resp.content, status=resp.status_code)
+    for k, v in resp.headers.items():
+        if k.lower() in excluded or k.lower() == "content-length":
+            continue
+        response.headers[k] = v
+
+    # Add headers to allow framing
+    response.headers['X-Frame-Options'] = 'ALLOWALL'
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    
+    return response
+
+
+@app.route("/aquaponics/assets/<path:asset_path>")
+def thingspeak_assets_proxy(asset_path):
+    """Proxy Thingspeak assets (JS, CSS, images) that widgets try to load."""
+    url = f"https://thingspeak.com/assets/{asset_path}"
+    logger.info("Proxying Thingspeak asset: %s", url)
+    try:
+        resp = requests.get(url, timeout=10)
+        content_type = resp.headers.get("Content-Type", "application/octet-stream")
+        response = Response(resp.content, status=resp.status_code, mimetype=content_type)
+        response.headers["Cache-Control"] = "public, max-age=3600"
+        return response
+    except Exception:
+        logger.exception("Failed to proxy Thingspeak asset: %s", url)
+        return ("Asset not found", 404)
 
 
 @app.route("/aquaponics/champions")
@@ -611,5 +705,25 @@ def visitors():
 
 @app.route("/aquaponics/videos")
 def videos_static():
-    """Static videos page."""
-    return render_template("videos_static.html")
+    """Redirect to blog videos page."""
+    return redirect(url_for("blog_bp.videos"))
+
+
+@app.route("/aquaponics/thingspeak_api")
+def thingspeak_api():
+    """Proxy ThingSpeak API requests to avoid CORS blocks."""
+    channel_id = request.args.get("channel_id")
+    
+    if not channel_id:
+        return ("Missing 'channel_id' parameter", 400)
+    
+    url = f"https://api.thingspeak.com/channels/{channel_id}/feeds/last.json"
+    
+    try:
+        resp = requests.get(url, timeout=10)
+        response = Response(resp.content, status=resp.status_code, mimetype="application/json")
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+    except Exception:
+        logger.exception("ThingSpeak API proxy request failed for channel=%s", channel_id)
+        return ("API request failed", 502)

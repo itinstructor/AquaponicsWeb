@@ -1,15 +1,8 @@
-from flask import send_from_directory
-from .models import BlogPost, Photo  # Make sure BlogPost and Photo are imported
-from flask import current_app, render_template
+from flask import send_from_directory, render_template, request, redirect, url_for, flash, session, abort, jsonify, current_app, make_response
 from . import blog_bp
-try:
-    from sqlalchemy.orm import selectinload
-    from database import db  # Fixed: import from database.py to avoid circular import
-except Exception:
-    db = None  # fallback if not needed in this module path
-
-from flask import render_template, request, redirect, url_for, flash, session, abort, jsonify, current_app, make_response
-from .models import User, BlogPost, BlogImage, LoginAttempt
+from database import db
+from sqlalchemy.orm import selectinload
+from .models import BlogPost, Photo, Video, User, BlogImage, LoginAttempt
 from .auth import validate_password, get_client_ip, log_login_attempt
 from .utils import save_uploaded_image
 from datetime import datetime, timezone
@@ -17,7 +10,7 @@ from functools import wraps
 import logging
 import os
 import secrets
-import time  # ADD: Import time module
+import time
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash
 
@@ -656,6 +649,152 @@ def reorder_photos():
         return jsonify({"success": True})
     except Exception as e:
         logger.exception(f"Reorder failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================================
+# VIDEO ROUTES - YouTube video management
+# ============================================================================
+
+@blog_bp.route('/videos')
+def videos():
+    """Display all videos."""
+    try:
+        all_videos = Video.query.order_by(Video.order.asc(), Video.created_at.desc()).all()
+        user = get_current_user()
+        return render_template('videos.html', videos=all_videos, user=user)
+    except Exception as e:
+        logger.exception(f"Error loading videos: {e}")
+        flash('Could not load videos.', 'danger')
+        return redirect(url_for('blog_bp.index'))
+
+
+@blog_bp.route('/video/add', methods=['GET', 'POST'])
+@login_required
+def add_video():
+    """Add a new video."""
+    user = get_current_user()
+    if not user:
+        flash('Please log in to add videos.', 'danger')
+        return redirect(url_for('blog_bp.login'))
+    
+    if request.method == 'POST':
+        try:
+            youtube_url = request.form.get('youtube_id', '').strip()
+            title = request.form.get('title', '').strip()
+            description = request.form.get('description', '').strip()
+            
+            # Extract YouTube ID from URL if it's a full URL
+            youtube_id = youtube_url
+            if 'youtube.com/watch?v=' in youtube_url:
+                youtube_id = youtube_url.split('v=')[1].split('&')[0]
+            elif 'youtu.be/' in youtube_url:
+                youtube_id = youtube_url.split('youtu.be/')[1].split('?')[0]
+            
+            if not youtube_id or not title:
+                flash('YouTube ID/URL and title are required.', 'danger')
+                return render_template('add_video.html')
+            
+            # Check for duplicates
+            existing = Video.query.filter_by(youtube_id=youtube_id).first()
+            if existing:
+                flash('This video already exists.', 'warning')
+                return render_template('add_video.html')
+            
+            # Get max order and add 1
+            max_order = db.session.query(db.func.max(Video.order)).scalar() or 0
+            
+            video = Video(
+                youtube_id=youtube_id,
+                title=title,
+                description=description,
+                order=max_order + 1
+            )
+            db.session.add(video)
+            db.session.commit()
+            
+            logger.info(f"Video added: {youtube_id}")
+            flash('Video added successfully!', 'success')
+            return redirect(url_for('blog_bp.videos'))
+        except Exception as e:
+            logger.exception(f"Error adding video: {e}")
+            flash(f'Error adding video: {e}', 'danger')
+            return render_template('add_video.html')
+    
+    return render_template('add_video.html')
+
+
+@blog_bp.route('/video/<int:video_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_video(video_id):
+    """Edit a video."""
+    user = get_current_user()
+    if not user:
+        flash('Please log in to edit videos.', 'danger')
+        return redirect(url_for('blog_bp.login'))
+    
+    video = Video.query.get_or_404(video_id)
+    
+    if request.method == 'POST':
+        try:
+            video.title = request.form.get('title', '').strip()
+            video.description = request.form.get('description', '').strip()
+            db.session.commit()
+            
+            logger.info(f"Video {video_id} updated")
+            flash('Video updated!', 'success')
+            return redirect(url_for('blog_bp.videos'))
+        except Exception as e:
+            logger.exception(f"Video update failed: {e}")
+            db.session.rollback()
+            flash(f'Update failed: {e}', 'danger')
+    
+    return render_template('edit_video.html', video=video, user=user)
+
+
+@blog_bp.route('/video/<int:video_id>/delete', methods=['POST'])
+@login_required
+def delete_video(video_id):
+    """Delete a video."""
+    user = get_current_user()
+    if not user:
+        flash('Please log in', 'danger')
+        return redirect(url_for('blog_bp.login'))
+    
+    try:
+        video = Video.query.get_or_404(video_id)
+        db.session.delete(video)
+        db.session.commit()
+        logger.info(f"Video {video_id} deleted")
+        flash('Video deleted!', 'success')
+    except Exception as e:
+        logger.exception(f"Delete failed: {e}")
+        db.session.rollback()
+        flash(f'Delete failed: {e}', 'danger')
+    
+    return redirect(url_for('blog_bp.videos'))
+
+
+@blog_bp.route('/videos/reorder', methods=['POST'])
+@login_required
+def reorder_videos():
+    """Reorder videos via drag and drop."""
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+    
+    try:
+        order = request.json.get('order', [])
+        for index, video_id in enumerate(order):
+            video = Video.query.get(video_id)
+            if video:
+                video.order = index
+        db.session.commit()
+        logger.info(f"Videos reordered: {order}")
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.exception(f"Reorder failed: {e}")
+        db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
 

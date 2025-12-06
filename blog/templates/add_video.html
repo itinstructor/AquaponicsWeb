@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}Edit Photo{% endblock %}
+{% block title %}Add Video - WNCC Aquaponics{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Edit Photo</h2>
+    <h2>Add Video</h2>
     
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -18,26 +18,25 @@
     {% endwith %}
     
     <div class="row">
-        <div class="col-md-6">
-            <img src="{{ url_for('blog_bp.serve_photo', filename=photo.filename) }}" class="img-fluid mb-3 rounded" alt="{{ photo.caption }}">
-            <div class="alert alert-info">
-                <strong>Filename:</strong> {{ photo.filename }}
-            </div>
-        </div>
-        <div class="col-md-6">
+        <div class="col-md-8">
             <form method="post">
                 <div class="mb-3">
-                    <label for="caption" class="form-label">Caption</label>
-                    <input class="form-control" type="text" id="caption" name="caption" maxlength="500" value="{{ photo.caption or '' }}">
+                    <label for="youtube_id" class="form-label">YouTube URL or Video ID</label>
+                    <input class="form-control" type="text" id="youtube_id" name="youtube_id" placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ or dQw4w9WgXcQ" required>
+                    <small class="form-text text-muted">Paste the full YouTube URL or just the video ID</small>
+                </div>
+                <div class="mb-3">
+                    <label for="title" class="form-label">Title</label>
+                    <input class="form-control" type="text" id="title" name="title" maxlength="500" required>
                 </div>
                 <div class="mb-3">
                     <label for="description" class="form-label">Description</label>
-                    <textarea class="form-control" id="description" name="description" rows="4">{{ photo.description or '' }}</textarea>
+                    <textarea class="form-control" id="description" name="description" rows="4"></textarea>
                 </div>
                 <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-check-lg"></i> Save Changes
+                    <i class="bi bi-check-lg"></i> Add Video
                 </button>
-                <a href="{{ url_for('blog_bp.photos') }}" class="btn btn-secondary">
+                <a href="{{ url_for('blog_bp.videos') }}" class="btn btn-secondary">
                     <i class="bi bi-x-lg"></i> Cancel
                 </a>
             </form>

@@ -5,7 +5,72 @@
   <h1>📊 Aquaponics Sensor Data</h1>
   <p class="lead">Real-time monitoring of the WNCC STEM Club Aquaponics System</p>
 
-  <!-- Water Temperature -->
+  <!-- Live Sensor Data Card -->
+  <div class="card mb-4">
+    <div class="card-header">
+      <h3 class="mb-0">🌡️ Current Readings</h3>
+    </div>
+    <div class="card-body">
+      <div class="row" id="sensor-widgets" style="gap: 0;">
+        <div class="col-lg-2 col-md-4 mb-0" style="padding-right: 8px;">
+          <div class="card text-center bg-light h-100">
+            <div class="card-body p-3 d-flex flex-column justify-content-center">
+              <h6 class="card-title text-muted small mb-2">Water Temperature</h6>
+              <h2 class="text-dark mb-2" id="field4">--</h2>
+              <p class="text-muted small mb-0">°F</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-2 col-md-4 mb-0" style="padding-right: 8px;">
+          <div class="card text-center bg-light h-100">
+            <div class="card-body p-3 d-flex flex-column justify-content-center">
+              <h6 class="card-title text-muted small mb-2">pH Level</h6>
+              <h2 class="text-dark mb-2" id="field6">--</h2>
+              <p class="text-muted small mb-0">pH</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-2 col-md-4 mb-0" style="padding-right: 8px;">
+          <div class="card text-center bg-light h-100">
+            <div class="card-body p-3 d-flex flex-column justify-content-center">
+              <h6 class="card-title text-muted small mb-2">Water Level</h6>
+              <h2 class="text-dark mb-2" id="field5">--</h2>
+              <p class="text-muted small mb-0">Status</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-2 col-md-4 mb-0" style="padding-right: 8px;">
+          <div class="card text-center bg-light h-100">
+            <div class="card-body p-3 d-flex flex-column justify-content-center">
+              <h6 class="card-title text-muted small mb-2">Ambient Temp</h6>
+              <h2 class="text-dark mb-2" id="field1">--</h2>
+              <p class="text-muted small mb-0">°F</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-2 col-md-4 mb-0" style="padding-right: 8px;">
+          <div class="card text-center bg-light h-100">
+            <div class="card-body p-3 d-flex flex-column justify-content-center">
+              <h6 class="card-title text-muted small mb-2">Humidity</h6>
+              <h2 class="text-dark mb-2" id="field2">--</h2>
+              <p class="text-muted small mb-0">%</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-2 col-md-4 mb-0">
+          <div class="card text-center bg-light h-100">
+            <div class="card-body p-3 d-flex flex-column justify-content-center">
+              <h6 class="card-title text-muted small mb-2">Barometric Pressure</h6>
+              <h2 class="text-dark mb-2" id="field3">--</h2>
+              <p class="text-muted small mb-0">inHg</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Water Temperature Chart -->
   <div class="card mb-4">
     <div class="card-header">
       <h3 class="mb-0">🌡️ Water Temperature</h3>
@@ -13,20 +78,16 @@
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-6">
-          <iframe class="chart-iframe" src="https://thingspeak.com/channels/1539695/widgets/1107921"
-            loading="lazy"></iframe>
+          <iframe style="height: 260px; width: 450px; border: none;" src="https://thingspeak.com/channels/1539695/charts/4?dynamic=true&results=60&type=line" loading="lazy"></iframe>
         </div>
         <div class="col-md-6">
-          <iframe class="chart-iframe"
-            src="https://thingspeak.com/channels/1539695/charts/4?dynamic=true&results=60&type=line"
-            loading="lazy"></iframe>
+          <iframe style="height: 260px; width: 450px; border: none;" src="https://thingspeak.com/channels/1539695/widgets/1107921" loading="lazy"></iframe>
         </div>
-
       </div>
     </div>
   </div>
 
-  <!-- pH Levels -->
+  <!-- pH Levels Chart -->
   <div class="card mb-4">
     <div class="card-header">
       <h3 class="mb-0">⚗️ pH Levels</h3>
@@ -34,19 +95,16 @@
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-6">
-          <iframe class="chart-iframe" src="https://thingspeak.com/channels/1539695/widgets/1109733"
-            loading="lazy"></iframe>
+          <iframe style="height: 260px; width: 450px; border: none;" src="https://thingspeak.com/channels/1539695/widgets/1109733" loading="lazy"></iframe>
         </div>
         <div class="col-md-6">
-          <iframe class="chart-iframe"
-            src="https://thingspeak.com/channels/1539695/charts/1?dynamic=true&results=60&type=line"
-            loading="lazy"></iframe>
+          <iframe style="height: 260px; width: 450px; border: none;" src="https://thingspeak.com/channels/1539695/charts/1?dynamic=true&results=60&type=line" loading="lazy"></iframe>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Water Level -->
+  <!-- Water Level Chart -->
   <div class="card mb-4">
     <div class="card-header">
       <h3 class="mb-0">💧 Water Level</h3>
@@ -54,15 +112,13 @@
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-6">
-          <iframe class="chart-iframe"
-            src="https://thingspeak.com/channels/1539695/charts/5?dynamic=true&results=60&type=line"
-            loading="lazy"></iframe>
+          <iframe style="height: 260px; width: 450px; border: none;" src="https://thingspeak.com/channels/1539695/charts/5?dynamic=true&results=60&type=line" loading="lazy"></iframe>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Ambient Conditions -->
+  <!-- Ambient Conditions Charts -->
   <div class="card mb-4">
     <div class="card-header">
       <h3 class="mb-0">🌿 Ambient Conditions</h3>
@@ -70,32 +126,22 @@
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-6">
-          <iframe class="chart-iframe" src="https://thingspeak.com/channels/1539695/widgets/1106625"
-            loading="lazy"></iframe>
+          <iframe style="height: 260px; width: 450px; border: none;" src="https://thingspeak.com/channels/1539695/widgets/1106625" loading="lazy"></iframe>
         </div>
         <div class="col-md-6">
-          <iframe class="chart-iframe"
-            src="https://thingspeak.com/channels/1539695/charts/1?dynamic=true&results=60&type=line"
-            loading="lazy"></iframe>
-        </div>
-
-        <div class="col-md-6">
-          <iframe class="chart-iframe" src="https://thingspeak.com/channels/1539695/widgets/1106626"
-            loading="lazy"></iframe>
+          <iframe style="height: 260px; width: 450px; border: none;" src="https://thingspeak.com/channels/1539695/charts/1?dynamic=true&results=60&type=line" loading="lazy"></iframe>
         </div>
         <div class="col-md-6">
-          <iframe class="chart-iframe"
-            src="https://thingspeak.com/channels/1539695/charts/2?dynamic=true&results=60&type=line"
-            loading="lazy"></iframe>
+          <iframe style="height: 260px; width: 450px; border: none;" src="https://thingspeak.com/channels/1539695/widgets/1106626" loading="lazy"></iframe>
         </div>
         <div class="col-md-6">
-          <iframe class="chart-iframe" src="https://thingspeak.com/channels/1539695/widgets/1106627"
-            loading="lazy"></iframe>
+          <iframe style="height: 260px; width: 450px; border: none;" src="https://thingspeak.com/channels/1539695/charts/2?dynamic=true&results=60&type=line" loading="lazy"></iframe>
         </div>
         <div class="col-md-6">
-          <iframe class="chart-iframe"
-            src="https://thingspeak.com/channels/1539695/charts/3?dynamic=true&results=60&type=line"
-            loading="lazy"></iframe>
+          <iframe style="height: 260px; width: 450px; border: none;" src="https://thingspeak.com/channels/1539695/widgets/1106627" loading="lazy"></iframe>
+        </div>
+        <div class="col-md-6">
+          <iframe style="height: 260px; width: 450px; border: none;" src="https://thingspeak.com/channels/1539695/charts/3?dynamic=true&results=60&type=line" loading="lazy"></iframe>
         </div>
       </div>
     </div>
@@ -104,5 +150,43 @@
   <div class="text-center mb-4">
     <a href="{{ url_for('index') }}" class="btn btn-primary">View Live Stream</a>
   </div>
+
+  <script>
+    // Fetch latest sensor data from Thingspeak API via proxy
+    async function updateSensorData() {
+      try {
+        const response = await fetch('/aquaponics/thingspeak_api?channel_id=1539695');
+        const data = await response.json();
+
+        if (data) {
+          // Water Temperature (field4)
+          document.getElementById('field4').textContent = data.field4 ? parseFloat(data.field4).toFixed(1) : '--';
+          // pH Level (field6)
+          document.getElementById('field6').textContent = data.field6 ? parseFloat(data.field6).toFixed(1) : '--';
+          // Water Level (field5) - Show OK or Low
+          const waterLevel = data.field5 ? parseFloat(data.field5) : null;
+          let waterLevelText = '--';
+          if (waterLevel === 1) {
+            waterLevelText = 'OK';
+          } else if (waterLevel === 0) {
+            waterLevelText = 'Low';
+          }
+          document.getElementById('field5').textContent = waterLevelText;
+          // Ambient Temp (field1)
+          document.getElementById('field1').textContent = data.field1 ? parseFloat(data.field1).toFixed(1) : '--';
+          // Ambient Humidity (field2)
+          document.getElementById('field2').textContent = data.field2 ? parseFloat(data.field2).toFixed(0) : '--';
+          // Barometric Pressure (field3)
+          document.getElementById('field3').textContent = data.field3 ? parseFloat(data.field3).toFixed(2) : '--';
+        }
+      } catch (error) {
+        console.error('Error fetching sensor data:', error);
+      }
+    }
+
+    // Update on page load and every 30 seconds
+    updateSensorData();
+    setInterval(updateSensorData, 30000);
+  </script>
 </div>
 {% endblock %}

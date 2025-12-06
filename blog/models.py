@@ -120,3 +120,19 @@ class Photo(db.Model):
     
     def __repr__(self):
         return f'<Photo {self.filename}>'
+
+
+class Video(db.Model):
+    """Model for video content."""
+    __tablename__ = 'videos'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    youtube_id = db.Column(db.String(200), unique=True, nullable=False)
+    title = db.Column(db.String(500), nullable=False)
+    description = db.Column(db.Text)
+    order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<Video {self.title}>'
