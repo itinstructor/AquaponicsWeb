@@ -13,6 +13,12 @@
         {% endif %}
     </div>
 
+    {% if user %}
+    <div class="alert alert-info mb-3">
+        <i class="bi bi-arrows-move"></i> Drag and drop videos to reorder them.
+    </div>
+    {% endif %}
+
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
@@ -27,32 +33,44 @@
     {% if videos %}
     <div class="row g-4" id="videos-gallery">
         {% for video in videos %}
-        <div class="col-md-6 col-lg-4 video-item" data-video-id="{{ video.id }}">
+        <div class="col-md-6 col-lg-4 video-item" data-video-id="{{ video.id }}" {% if user %}draggable="true"{% endif %}>
             <div class="card h-100 shadow-sm position-relative">
                 {% if user %}
-                <button class="btn btn-sm position-absolute top-0 start-0 m-2 drag-handle" title="Drag to reorder" aria-label="Drag to reorder" style="z-index: 10;">☰</button>
-                <a href="{{ url_for('blog_bp.edit_video', video_id=video.id) }}" class="btn btn-sm position-absolute top-0 end-0 m-2" title="Edit Video" style="z-index: 10;">
-                    <i class="bi bi-pencil"></i> Edit
-                </a>
+                <div class="position-absolute top-0 start-0 m-2" style="z-index: 10;">
+                    <div class="drag-handle-container">
+                        <button class="drag-handle" title="Drag to reorder" aria-label="Drag to reorder">☰</button>
+                    </div>
+                </div>
                 {% endif %}
                 <a href="https://www.youtube.com/watch?v={{ video.youtube_id }}" target="_blank" class="text-decoration-none video-link">
-                    <div class="video-thumbnail-wrapper" style="position: relative; background: #f0f0f0; aspect-ratio: 16/9; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                    <div class="video-thumbnail-wrapper">
                         <img src="https://img.youtube.com/vi/{{ video.youtube_id }}/hqdefault.jpg" 
                              class="card-img-top video-thumbnail" 
-                             alt="{{ video.title }}"
-                             style="width: 100%; height: 100%; object-fit: cover; display: block;">
-                        <div class="video-placeholder" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 3rem; display: none;">🎬</div>
+                             alt="{{ video.title }}">
+                        <div class="video-placeholder">🎬</div>
                     </div>
                 </a>
                 <div class="card-body">
                     <h5 class="card-title">{{ video.title }}</h5>
                     {% if video.description %}
-                    <p class="card-text small text-muted">{{ video.description }}</p>
+                    <p class="card-text small">{{ video.description }}</p>
                     {% endif %}
                     <a href="https://www.youtube.com/watch?v={{ video.youtube_id }}" target="_blank" class="btn btn-danger">
                         <i class="bi bi-youtube"></i> Watch on YouTube
                     </a>
                 </div>
+                {% if user %}
+                <div class="card-footer">
+                    <a href="{{ url_for('blog_bp.edit_video', video_id=video.id) }}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-pencil"></i> Edit
+                    </a>
+                    <form action="{{ url_for('blog_bp.delete_video', video_id=video.id) }}" method="post" class="d-inline" onsubmit="return confirm('Delete this video?');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                            <i class="bi bi-trash"></i> Delete
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
             </div>
         </div>
         {% endfor %}
@@ -68,6 +86,19 @@
     </div>
     {% endif %}
 </div>
+
+<!-- Handle YouTube thumbnail load failures -->
+<script>
+document.querySelectorAll('.video-thumbnail').forEach(function(img) {
+    img.addEventListener('error', function() {
+        var placeholder = img.parentElement.querySelector('.video-placeholder');
+        if (placeholder) {
+            placeholder.style.display = 'flex';
+            img.style.display = 'none';
+        }
+    });
+});
+</script>
 
 {% if user %}
 <!-- SortableJS for drag-and-drop reordering -->
@@ -105,16 +136,4 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 {% endif %}
-<script>
-// Handle YouTube thumbnail load failures
-document.querySelectorAll('.video-thumbnail').forEach(function(img) {
-    img.addEventListener('error', function() {
-        var placeholder = img.parentElement.querySelector('.video-placeholder');
-        if (placeholder) {
-            placeholder.style.display = 'flex';
-            img.style.display = 'none';
-        }
-    });
-});
-</script>
 {% endblock %}

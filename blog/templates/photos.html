@@ -39,9 +39,8 @@
             <div class="card h-100">
                 <a href="{{ url_for('blog_bp.serve_photo', filename=photo.filename) }}" data-caption="{{ photo.caption }}">
                     <img src="{{ url_for('blog_bp.serve_photo', filename=photo.filename) }}" 
-                         class="card-img-top img-fluid" 
-                         alt="{{ photo.caption }}" 
-                         style="width: 100%; height: auto; object-fit: contain;">
+                         class="card-img-top img-fluid photo-gallery-img" 
+                         alt="{{ photo.caption }}">
                 </a>
                 <div class="card-body">
                     <p class="card-text">{{ photo.caption or 'No caption' }}</p>
@@ -60,6 +59,11 @@
                             <i class="bi bi-trash"></i> Delete
                         </button>
                     </form>
+                </div>
+                <div class="position-absolute top-0 start-0 m-2" style="z-index: 10;">
+                    <div class="drag-handle-container">
+                        <button class="drag-handle" title="Drag to reorder" aria-label="Drag to reorder">☰</button>
+                    </div>
                 </div>
                 {% endif %}
             </div>
@@ -85,6 +89,7 @@
         new Sortable(gallery, {
             animation: 150,
             ghostClass: 'bg-light',
+            handle: '.drag-handle',
             onEnd: function(evt) {
                 const items = gallery.querySelectorAll('.photo-item');
                 const order = Array.from(items).map(item => parseInt(item.dataset.id));
