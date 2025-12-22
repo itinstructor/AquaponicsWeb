@@ -15,18 +15,18 @@
         <div class="col-lg-2 col-md-4 mb-0" style="padding-right: 8px;">
           <div class="card text-center bg-light h-100">
             <div class="card-body p-3 d-flex flex-column justify-content-center">
-              <h6 class="card-title text-muted small mb-2">Water Temperature</h6>
-              <h2 class="text-dark mb-2" id="field4">--</h2>
-              <p class="text-muted small mb-0">°F</p>
+              <h6 class="card-title text-muted small mb-2">pH Level</h6>
+              <h2 class="text-dark mb-2" id="field6">--</h2>
+              <p class="text-muted small mb-0">pH</p>
             </div>
           </div>
         </div>
         <div class="col-lg-2 col-md-4 mb-0" style="padding-right: 8px;">
           <div class="card text-center bg-light h-100">
             <div class="card-body p-3 d-flex flex-column justify-content-center">
-              <h6 class="card-title text-muted small mb-2">pH Level</h6>
-              <h2 class="text-dark mb-2" id="field6">--</h2>
-              <p class="text-muted small mb-0">pH</p>
+              <h6 class="card-title text-muted small mb-2">Water Temperature</h6>
+              <h2 class="text-dark mb-2" id="field4">--</h2>
+              <p class="text-muted small mb-0">°F</p>
             </div>
           </div>
         </div>
@@ -70,25 +70,6 @@
     </div>
   </div>
 
-  <!-- Water Temperature Chart -->
-  <div class="card mb-4">
-    <div class="card-header">
-      <h3 class="mb-0">🌡️ Water Temperature</h3>
-    </div>
-    <div class="card-body">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <iframe style="height: 260px; width: 450px; border: none;"
-            src="https://thingspeak.com/channels/1539695/widgets/1107921" loading="lazy"></iframe>
-        </div>
-        <div class="col-md-6">
-          <iframe style="height: 260px; width: 450px; border: none;"
-            src="https://thingspeak.com/channels/1539695/charts/4?dynamic=true&results=60&type=line"
-            loading="lazy"></iframe>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- pH Levels Chart -->
   <div class="card mb-4">
@@ -109,6 +90,28 @@
       </div>
     </div>
   </div>
+
+  <!-- Water Temperature Chart -->
+  <div class="card mb-4">
+    <div class="card-header">
+      <h3 class="mb-0">🌡️ Water Temperature</h3>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <iframe style="height: 260px; width: 450px; border: none;"
+            src="https://thingspeak.com/channels/1539695/widgets/1107921" loading="lazy"></iframe>
+        </div>
+        <div class="col-md-6">
+          <iframe style="height: 260px; width: 450px; border: none;"
+            src="https://thingspeak.com/channels/1539695/charts/4?dynamic=true&results=60&type=line"
+            loading="lazy"></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
 
   <!-- Water Level Chart -->
   <div class="card mb-4">
