@@ -19,8 +19,8 @@ try:
 except Exception:
     MOUNTAIN_TZ = timezone(timedelta(hours=-7))  # crude fallback
 
-# Rotate at midnight Mountain time regardless of server timezone
-MOUNTAIN_MIDNIGHT = time(hour=0, minute=0, tzinfo=MOUNTAIN_TZ)
+# Rotate at 11:59 PM Mountain time (end of day) regardless of server timezone
+MOUNTAIN_ROTATION_TIME = time(hour=23, minute=59, tzinfo=MOUNTAIN_TZ)
 
 
 def mountain_time_formatter(record):
@@ -74,7 +74,7 @@ def setup_logging(log_filename="main_app.log", level="INFO", force=False):
             log_path,
             format=mountain_time_formatter,
             level=level,
-            rotation=MOUNTAIN_MIDNIGHT,  # Rotate at Mountain midnight
+            rotation=MOUNTAIN_ROTATION_TIME,  # Rotate at 11:59 PM Mountain time
             retention="14 days",        # Keep 14 days of logs
             encoding="utf-8",
             enqueue=True                # Thread-safe async writes
