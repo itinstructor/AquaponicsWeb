@@ -9,7 +9,7 @@
 
   <!-- Fish Tank -->
   <div class="card mb-4">
-    <div class="card-header">🐟 Fish Tank</div>
+    <div class="card-header">🐟 FishCam</div>
     <div class="card-body">
       <p class="mb-3">Live stream from the Aquaponics system fish tank in the Pit (Student common area).</p>
       <img id="fishStream" src="{{ fish_stream_url }}?t={{ timestamp }}" alt="Fish Tank Stream" class="img-fluid">
@@ -37,7 +37,7 @@
 
   <!-- Plants Bed -->
   <div class="card mb-4">
-    <div class="card-header">🌱 Plant Bed</div>
+    <div class="card-header">🌱 Plant Cam</div>
     <div class="card-body">
       <p class="mb-3">Live stream from the Aquaponics plant bed. See how the plants are growing with
         nutrients from the fish waste!</p>
@@ -48,7 +48,7 @@
   <!-- Latest Blog Posts -->
   {% if latest_posts and latest_posts|length > 0 %}
   <div class="card mb-4">
-    <div class="card-header">📝 Latest Blog Posts</div>
+    <div class="card-header">📝 Latest Fish Blog Posts</div>
     <div class="card-body">
       {% for post in latest_posts[:2] %}
       <div class="mb-4">
