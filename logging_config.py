@@ -5,7 +5,7 @@ Uses Loguru for simplified, reliable logging with Mountain Time formatting.
 
 import os
 import sys
-from datetime import datetime, timezone, timedelta, time
+from datetime import datetime, timezone, timedelta
 from loguru import logger
 
 # Determine log directory
@@ -20,7 +20,8 @@ except Exception:
     MOUNTAIN_TZ = timezone(timedelta(hours=-7))  # crude fallback
 
 # Rotate at 11:59 PM Mountain time (end of day) regardless of server timezone
-MOUNTAIN_ROTATION_TIME = time(hour=23, minute=59, tzinfo=MOUNTAIN_TZ)
+# Note: Loguru's rotation expects time in format "HH:MM" as a string
+MOUNTAIN_ROTATION_TIME = "23:59"
 
 
 def mountain_time_formatter(record):
